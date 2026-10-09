@@ -75,11 +75,15 @@ flowchart LR
 
 ## Security
 
-- **Offline by construction.** The app is sandboxed with no network entitlement, so it cannot open
-  connections. WhisperKit is configured with `download: false` and the tokenizer is bundled; the
-  transcriber refuses to load if any required file is missing (WhisperKit would otherwise fall
-  back to downloading).
-- **Minimal entitlements:** App Sandbox + microphone. Hardened runtime.
+- **Dictation is offline.** Audio and text never leave the Mac. WhisperKit is configured with
+  `download: false` and the tokenizer is bundled; the transcriber refuses to load if any required
+  file is missing (WhisperKit would otherwise fall back to downloading).
+- **One network request, and you can turn it off.** Once a day, `UpdateChecker` (the only network
+  code in the app) asks GitHub's public releases API whether a newer version exists, and the menu
+  offers to open the release page. Nothing is downloaded or installed, no token or user data is
+  sent (ephemeral session), and Settings → General → *Check for updates daily* turns it off.
+- **Minimal entitlements:** App Sandbox + microphone + outgoing network connections (for the
+  update check only). Hardened runtime.
 - **No clipboard.** Text is typed via synthetic Unicode key events, so dictations never pass
   through the pasteboard (clipboard managers, other apps) and your clipboard is untouched.
 - **Output is sanitised:** single line only (newlines/tabs become spaces, so dictation can't press

@@ -430,6 +430,53 @@ struct DictationControllerTests {
         #expect(inserter.deleted.isEmpty)
     }
 
+    @Test func reachingTheLimitStillTranscribesAndTypes() async {
+        let controller = await makeController()
+        controller.hotkeyPressed()
+        #expect(controller.state == .recording)
+
+        controller.recordingReachedLimit()
+        #expect(controller.lastError == "Recording reached the 10-minute limit and was stopped.")
+        await waitUntilReady(controller)
+
+        #expect(controller.state == .ready)
+        #expect(!recorder.isRecording)
+        #expect(await transcriber.received.count == 1)
+        #expect(inserter.inserted == ["hello world"])
+        #expect(controller.lastError == "Recording reached the 10-minute limit and was stopped.")
+    }
+
+    @Test func reachingTheLimitAfterHoldReleaseIsIgnored() async {
+        let controller = await makeController()
+        controller.hotkeyPressed()
+        clock.now += 2
+        controller.recordingReachedLimit()
+        controller.hotkeyReleased() // the hold already ended by the limit: no second stop
+        await waitUntilReady(controller)
+        #expect(await transcriber.received.count == 1)
+    }
+
+    @Test func reachingTheLimitIsANoOpWhenReady() async {
+        let controller = await makeController()
+        controller.recordingReachedLimit()
+        #expect(controller.state == .ready)
+        #expect(controller.lastError == nil)
+        #expect(await transcriber.received.isEmpty)
+    }
+
+    @Test func reachingTheLimitIsANoOpWhileTranscribing() async {
+        let controller = await makeController()
+        await transcriber.set(delay: .milliseconds(300))
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        #expect(controller.state == .transcribing)
+        controller.recordingReachedLimit()
+        #expect(controller.lastError == nil)
+        await waitUntilReady(controller)
+        #expect(await transcriber.received.count == 1)
+        #expect(inserter.inserted.count == 1)
+    }
+
     @Test func emptyTranscriptInsertsNothing() async {
         await transcriber.set(result: " [BLANK_AUDIO] ")
         let controller = await makeController()

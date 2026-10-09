@@ -1,6 +1,5 @@
 @preconcurrency import AVFoundation
 import DictationCore
-import Synchronization
 
 /// Microphone capture with AVAudioEngine, resampled to 16 kHz mono Float32.
 ///
@@ -33,9 +32,17 @@ final class MicrophoneRecorder: AudioRecording {
         capacity: maxSamples,
         preRoll: Int(DictationController.sampleRate * preRollSeconds)
     )
-    private lazy var host = AudioEngineHost(buffer: buffer) { [weak self] message in
-        Task { @MainActor in self?.onFailure?(message) }
-    }
+    /// Called on the main actor when a recording hit the 10-minute cap and stopped growing.
+    var onCapacityReached: (() -> Void)?
+    private lazy var host: AudioEngineHost = {
+        // Fires on the realtime audio thread: only hop to the main actor, never block.
+        buffer.onCapacityReached = { [weak self] in
+            Task { @MainActor in self?.onCapacityReached?() }
+        }
+        return AudioEngineHost(buffer: buffer) { [weak self] message in
+            Task { @MainActor in self?.onFailure?(message) }
+        }
+    }()
 
     /// Builds the engine without starting it, so the first dictation starts faster.
     /// Call once microphone access is granted.
@@ -221,67 +228,5 @@ private final class AudioEngineHost: @unchecked Sendable {
             guard error == nil, let channel = output.floatChannelData?[0] else { return }
             store.append(UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
         }
-    }
-}
-
-/// Thread-safe sample store shared between the audio thread and the main actor.
-///
-/// While a dictation is being captured, samples accumulate (up to `capacity`). Otherwise only the
-/// newest pre-roll samples are kept, and they become the start of the next capture.
-final class CaptureBuffer: Sendable {
-    private struct State: Sendable {
-        var isCapturing = false
-        var samples: [Float] = []
-        var preRoll: AudioRingBuffer
-        var onLevel: (@Sendable (Float) -> Void)?
-    }
-
-    private let state: Mutex<State>
-    private let capacity: Int
-
-    init(capacity: Int, preRoll: Int) {
-        self.capacity = capacity
-        state = Mutex(State(preRoll: AudioRingBuffer(capacity: preRoll)))
-    }
-
-    var isCapturing: Bool { state.withLock { $0.isCapturing } }
-
-    func begin(onLevel: @escaping @Sendable (Float) -> Void) {
-        state.withLock { state in
-            state.samples = state.preRoll.samples
-            state.preRoll.removeAll()
-            state.onLevel = onLevel
-            state.isCapturing = true
-        }
-    }
-
-    func end() -> [Float] {
-        state.withLock { state in
-            defer { state.samples = [] }
-            state.isCapturing = false
-            state.onLevel = nil
-            return state.samples
-        }
-    }
-
-    func clearPreRoll() {
-        state.withLock { $0.preRoll.removeAll() }
-    }
-
-    func append(_ chunk: UnsafeBufferPointer<Float>) {
-        let onLevel = state.withLock { state -> (@Sendable (Float) -> Void)? in
-            guard state.isCapturing else {
-                state.preRoll.append(contentsOf: chunk)
-                return nil
-            }
-            let room = capacity - state.samples.count
-            if room > 0 { state.samples.append(contentsOf: chunk.prefix(room)) }
-            return state.onLevel
-        }
-        guard let onLevel else { return }
-        var sumOfSquares: Float = 0
-        for sample in chunk { sumOfSquares += sample * sample }
-        let rms = chunk.isEmpty ? 0 : (sumOfSquares / Float(chunk.count)).squareRoot()
-        onLevel(min(1, rms * 8))
     }
 }

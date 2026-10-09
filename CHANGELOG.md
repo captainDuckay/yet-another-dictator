@@ -4,6 +4,9 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 
 ## [Unreleased]
 
+### Fixed
+- A recording that reaches the 10-minute limit now stops and is typed, with a short notice, instead of silently dropping everything said after 10 minutes.
+
 ## [0.1.0] - 2026-10-09
 
 ### Added

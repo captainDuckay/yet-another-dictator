@@ -25,6 +25,21 @@ final class KeystrokeTextInserter: TextInserting {
         }
     }
 
+    func deleteBackward(_ count: Int) throws {
+        try preflight()
+        let source = CGEventSource(stateID: .privateState)
+        let delete: CGKeyCode = 0x33 // kVK_Delete (Backspace)
+        for _ in 0..<count {
+            for keyDown in [true, false] {
+                guard let event = CGEvent(keyboardEventSource: source, virtualKey: delete, keyDown: keyDown) else {
+                    throw Failure.eventCreationFailed
+                }
+                event.flags = []
+                event.post(tap: .cghidEventTap)
+            }
+        }
+    }
+
     func insert(_ text: String) throws {
         try preflight()
         // A private event source keeps physically held modifiers (e.g. from the hotkey) out of our events.

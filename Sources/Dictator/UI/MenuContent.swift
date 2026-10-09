@@ -14,6 +14,14 @@ struct MenuContent: View {
         if model.controller.state == .recording || model.controller.state == .transcribing {
             Button("Cancel Dictation") { model.controller.cancel() }
         }
+        Button(undoTitle) {
+            // Let the menu close so the field you dictated into has keyboard focus again.
+            Task {
+                try? await Task.sleep(for: .milliseconds(250))
+                model.controller.undoLastDictation()
+            }
+        }
+        .disabled(!model.controller.canUndo)
         if let text = model.controller.undeliveredTranscript {
             Divider()
             Text("Not typed: “\(Self.preview(text))”")
@@ -34,6 +42,14 @@ struct MenuContent: View {
         .keyboardShortcut(",")
         Button("Quit Dictator") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
+    }
+
+    private var undoTitle: String {
+        if let shortcut = model.undoShortcut {
+            "Undo Last Dictation (\(shortcut.displayString))"
+        } else {
+            "Undo Last Dictation"
+        }
     }
 
     private static func preview(_ text: String) -> String {

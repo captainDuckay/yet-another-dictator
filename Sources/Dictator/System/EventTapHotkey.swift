@@ -40,6 +40,8 @@ final class EventTapHotkey {
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
     var onInterrupt: (() -> Void)?
+    /// Called when the optional undo shortcut is pressed.
+    var onUndo: (() -> Void)?
     /// Called when the user types a key that isn't part of the shortcut, or clicks outside the menu
     /// bar, so the text cursor may have moved. Carries no key or position information.
     var onOtherInput: (() -> Void)?
@@ -62,7 +64,7 @@ final class EventTapHotkey {
         thread.start()
     }
 
-    func register(_ shortcut: Shortcut) throws {
+    func register(_ shortcut: Shortcut, undo: Shortcut? = nil) throws {
         unregister()
         guard CGPreflightListenEventAccess() else {
             CGRequestListenEventAccess()
@@ -93,7 +95,7 @@ final class EventTapHotkey {
         } else {
             throw Failure.tapUnavailable
         }
-        context.install(shortcut: shortcut, tap: tap)
+        context.install(shortcut: shortcut, undo: undo, tap: tap)
         let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
         let runLoop = thread.waitForRunLoop()
         CFRunLoopAddSource(runLoop, source, .commonModes)
@@ -110,7 +112,7 @@ final class EventTapHotkey {
             CFMachPortInvalidate(tap)
         }
         if let source { CFRunLoopRemoveSource(thread.waitForRunLoop(), source, .commonModes) }
-        context.install(shortcut: nil, tap: nil)
+        context.install(shortcut: nil, undo: nil, tap: nil)
         tap = nil
         source = nil
         isRegistered = false
@@ -122,6 +124,7 @@ final class EventTapHotkey {
         case .action(.released): onRelease?()
         case .action(.interrupted): onInterrupt?()
         case .otherInput: onOtherInput?()
+        case .undo: onUndo?()
         }
     }
 }
@@ -131,6 +134,7 @@ private final class TapContext: @unchecked Sendable {
     enum Event: Sendable {
         case action(ChordMatcher.Action)
         case otherInput
+        case undo
     }
 
     var deliver: @Sendable (Event) -> Void = { _ in }
@@ -138,14 +142,18 @@ private final class TapContext: @unchecked Sendable {
     private let lock = NSLock()
     private var shortcut: Shortcut?
     private var matcher: ChordMatcher?
+    private var undoShortcut: Shortcut?
+    private var undoMatcher: ChordMatcher?
     private var tap: CFMachPort?
 
     init(ownPID: Int64) { self.ownPID = ownPID }
 
-    func install(shortcut: Shortcut?, tap: CFMachPort?) {
+    func install(shortcut: Shortcut?, undo: Shortcut?, tap: CFMachPort?) {
         lock.withLock {
             self.shortcut = shortcut
             self.matcher = shortcut.map(ChordMatcher.init)
+            self.undoShortcut = undo
+            self.undoMatcher = undo.map(ChordMatcher.init)
             self.tap = tap
         }
     }
@@ -159,6 +167,7 @@ private final class TapContext: @unchecked Sendable {
             // Keys may have been released while disabled; start tracking afresh.
             if let tap, let shortcut {
                 matcher = ChordMatcher(shortcut)
+                undoMatcher = undoShortcut.map(ChordMatcher.init)
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
             return false
@@ -190,8 +199,19 @@ private final class TapContext: @unchecked Sendable {
         let (actions, swallow) = matcher.handle(keyEvent)
         self.matcher = matcher
         for action in actions { deliver(.action(action)) }
-        if case .down = keyEvent, !swallow, actions.isEmpty { deliver(.otherInput) }
-        return swallow
+
+        var undoActions: [ChordMatcher.Action] = []
+        var undoSwallow = false
+        if var undoMatcher {
+            (undoActions, undoSwallow) = undoMatcher.handle(keyEvent)
+            self.undoMatcher = undoMatcher
+            if undoActions.contains(.pressed) { deliver(.undo) }
+        }
+
+        if case .down = keyEvent, !swallow, !undoSwallow, actions.isEmpty, undoActions.isEmpty {
+            deliver(.otherInput)
+        }
+        return swallow || undoSwallow
     }
 
     /// Whether a point (global, top-left origin) is in the menu bar strip of the display it's on.

@@ -136,14 +136,31 @@ private struct ShortcutSection: View {
     let model: AppModel
     @State private var monitor: Any?
     @State private var recorder = ChordRecorder()
+    @State private var target = Target.dictate
+
+    private enum Target { case dictate, undo }
 
     var body: some View {
         Section("Shortcut") {
             LabeledContent("Dictate") {
-                Button(monitor == nil ? model.shortcut.displayString : "Press keys… (click to cancel)") {
-                    monitor == nil ? start() : stop()
+                Button(isRecording(.dictate) ? "Press keys… (click to cancel)" : model.shortcut.displayString) {
+                    monitor == nil ? start(.dictate) : stop()
                 }
                 .monospaced()
+            }
+            LabeledContent("Undo last dictation") {
+                HStack {
+                    Button(isRecording(.undo) ? "Press keys… (click to cancel)" : model.undoShortcut?.displayString ?? "None") {
+                        monitor == nil ? start(.undo) : stop()
+                    }
+                    .monospaced()
+                    if model.undoShortcut != nil, monitor == nil {
+                        Button("Clear") { model.clearUndoShortcut() }
+                    }
+                }
+            }
+            if let error = model.undoShortcutError {
+                Text(error).foregroundStyle(.red)
             }
             KeyboardView(highlighted: monitor == nil ? model.shortcut.codes : recorder.held)
                 .frame(maxWidth: .infinity)
@@ -178,7 +195,12 @@ private struct ShortcutSection: View {
         }
     }
 
-    private func start() {
+    private func isRecording(_ which: Target) -> Bool {
+        monitor != nil && target == which
+    }
+
+    private func start(_ which: Target) {
+        target = which
         model.suspendHotkey()
         recorder = ChordRecorder()
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { event in
@@ -187,7 +209,10 @@ private struct ShortcutSection: View {
                 let keys = codes.map {
                     Shortcut.Key(code: $0, label: KeyLabels.label(forKeyCode: $0, typed: KeyboardLayout.character(for: $0)))
                 }
-                model.setShortcut(Shortcut(keys: keys))
+                switch target {
+                case .dictate: model.setShortcut(Shortcut(keys: keys))
+                case .undo: model.setUndoShortcut(Shortcut(keys: keys))
+                }
                 stop(resume: false)
             }
             return nil

@@ -85,7 +85,8 @@ flowchart LR
 - **Output is sanitised:** single line only (newlines/tabs become spaces, so dictation can't press
   Enter and submit a form) and control characters are stripped.
 - **Audio stays in memory** for one dictation only, capped at 10 minutes, never written to disk.
-  Transcripts are never logged.
+  Transcripts are never logged. If typing fails, that one transcript is kept in memory (never on
+  disk) so it can be typed again from the menu, until it's discarded or the next dictation succeeds.
 - **Hotkey via a CoreGraphics event tap** so any key combination can be the shortcut. This needs
   Input Monitoring: the tap sees every key event, but each is only compared in memory against the
   shortcut and immediately dropped; nothing is stored, logged or published. Dictator's own typed

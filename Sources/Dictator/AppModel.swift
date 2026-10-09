@@ -41,6 +41,7 @@ final class AppModel {
             log.notice("state: \(String(describing: state), privacy: .public)")
             overlay.update(for: state)
         }
+        controller.onError = { [overlay] message in overlay.flash(message) }
         hotkey.onPress = { controller.hotkeyPressed() }
         hotkey.onRelease = { controller.hotkeyReleased() }
         hotkey.onInterrupt = { controller.cancel() }

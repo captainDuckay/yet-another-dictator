@@ -6,6 +6,7 @@ struct SettingsView: View {
     let model: AppModel
     @State private var microphone = Permissions.microphone
     @State private var canType = Permissions.canPostEvents
+    @State private var requestedTyping = false
 
     var body: some View {
         Form {
@@ -28,9 +29,19 @@ struct SettingsView: View {
                         refresh()
                     }
                 }
-                PermissionRow(title: "Accessibility (type into fields)", granted: canType) {
+                PermissionRow(
+                    title: "Accessibility (type into fields)",
+                    granted: canType,
+                    actionTitle: requestedTyping ? "Relaunch" : "Grant…"
+                ) {
+                    if requestedTyping { return Permissions.relaunch() }
                     if !Permissions.requestPostEvents() { Permissions.openPrivacySettings("Privacy_Accessibility") }
+                    requestedTyping = true
                     refresh()
+                }
+                if requestedTyping && !canType {
+                    Text("After enabling Dictator in System Settings, relaunch to apply.")
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -43,7 +54,10 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize()
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+        // Poll: toggling a permission in System Settings posts no notification, and a menu bar
+        // app does not reliably become active again when the user returns to this window.
+        // (Accessibility is cached per process, so only the microphone updates live.)
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             refresh()
         }
     }
@@ -57,6 +71,7 @@ struct SettingsView: View {
 private struct PermissionRow: View {
     let title: String
     let granted: Bool
+    var actionTitle = "Grant…"
     let grant: () -> Void
 
     var body: some View {
@@ -64,7 +79,7 @@ private struct PermissionRow: View {
             if granted {
                 Label("Granted", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             } else {
-                Button("Grant…", action: grant)
+                Button(actionTitle, action: grant)
             }
         }
     }

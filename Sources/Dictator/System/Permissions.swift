@@ -20,10 +20,20 @@ enum Permissions {
     }
 
     /// Posting synthetic key events (listed under Accessibility in System Settings).
+    /// The result is cached per process: a grant made while running only shows up after a relaunch.
     static var canPostEvents: Bool { CGPreflightPostEventAccess() }
 
     @discardableResult
     static func requestPostEvents() -> Bool { CGRequestPostEventAccess() }
+
+    static func relaunch() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
+            guard error == nil else { return }
+            Task { @MainActor in NSApp.terminate(nil) }
+        }
+    }
 
     static func openPrivacySettings(_ pane: String) {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") else { return }

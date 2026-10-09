@@ -252,6 +252,26 @@ struct DictationControllerTests {
         #expect(inserter.inserted.isEmpty)
     }
 
+    @Test func microphoneFailureDuringRecordingReturnsToReadyAndReports() async {
+        let controller = await makeController()
+        controller.hotkeyPressed()
+        #expect(controller.state == .recording)
+
+        controller.recordingFailed("The microphone was disconnected.")
+
+        #expect(controller.state == .ready)
+        #expect(!recorder.isRecording)
+        #expect(controller.lastError == "The microphone was disconnected.")
+        #expect(await transcriber.received.isEmpty)
+    }
+
+    @Test func microphoneFailureOutsideRecordingIsIgnored() async {
+        let controller = await makeController()
+        controller.recordingFailed("The microphone was disconnected.")
+        #expect(controller.state == .ready)
+        #expect(controller.lastError == nil)
+    }
+
     @Test func emptyTranscriptInsertsNothing() async {
         await transcriber.set(result: " [BLANK_AUDIO] ")
         let controller = await makeController()

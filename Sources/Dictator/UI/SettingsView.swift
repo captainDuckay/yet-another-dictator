@@ -33,6 +33,13 @@ struct SettingsView: View {
                 if let loginItemError {
                     Text(loginItemError).foregroundStyle(.red)
                 }
+                Toggle(isOn: Binding(
+                    get: { model.keepsMicrophoneReady },
+                    set: { model.keepsMicrophoneReady = $0 }
+                )) {
+                    Text("Keep microphone ready")
+                    Text("Catches the first word even if you start speaking as you press the shortcut. macOS shows the microphone indicator while this is on. Audio is held in memory for under half a second and never saved.")
+                }
             }
 
             Section("Permissions") {

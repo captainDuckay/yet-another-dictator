@@ -78,6 +78,11 @@ struct SettingsView: View {
 
             Section("Model") {
                 LabeledContent("Whisper Large v3 Turbo", value: model.controller.state.statusText)
+                Picker("Language", selection: Binding(get: { model.language }, set: { model.language = $0 })) {
+                    ForEach(DictationLanguage.allCases, id: \.self) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                }
                 Text("Runs entirely on this Mac. Audio never leaves the device and is not saved.")
                     .foregroundStyle(.secondary)
             }

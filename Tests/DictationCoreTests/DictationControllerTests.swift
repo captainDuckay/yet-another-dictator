@@ -23,6 +23,7 @@ actor FakeTranscriber: Transcribing {
     var result = "hello world"
     var prepareError: (any Error)?
     private(set) var received: [[Float]] = []
+    private(set) var languages: [String?] = []
     /// How long transcription takes; `cooperative` decides whether it stops when cancelled.
     var delay: Duration?
     var cooperative = true
@@ -39,8 +40,9 @@ actor FakeTranscriber: Transcribing {
         if let prepareError { throw prepareError }
     }
 
-    func transcribe(_ samples: [Float]) async throws -> String {
+    func transcribe(_ samples: [Float], language: String?) async throws -> String {
         received.append(samples)
+        languages.append(language)
         if let delay {
             if cooperative {
                 do {
@@ -270,6 +272,49 @@ struct DictationControllerTests {
         controller.recordingFailed("The microphone was disconnected.")
         #expect(controller.state == .ready)
         #expect(controller.lastError == nil)
+    }
+
+    @Test func passesTheChosenLanguageToTheTranscriber() async {
+        let controller = await makeController()
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+        controller.language = .danish
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+
+        #expect(await transcriber.languages == [nil, "da"])
+    }
+
+    @Test func reportsTimingFromReleaseToTypedText() async {
+        let controller = await makeController()
+        var timings: [DictationTiming] = []
+        controller.onTiming = { timings.append($0) }
+
+        controller.hotkeyPressed()
+        clock.now += 2
+        controller.hotkeyReleased() // hold: stops here, at t = 102
+        clock.now += 0.5 // transcription and typing take 0.5 s on the fake clock
+        await waitUntilReady(controller)
+
+        #expect(timings.count == 1)
+        #expect(timings.first?.audioSeconds == 1) // FakeRecorder returns 16 000 samples
+        #expect(timings.first?.releaseToTypedSeconds == 0.5)
+    }
+
+    @Test func noTimingWhenNothingIsTyped() async {
+        await transcriber.set(result: "[BLANK_AUDIO]")
+        let controller = await makeController()
+        var timings: [DictationTiming] = []
+        controller.onTiming = { timings.append($0) }
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+
+        #expect(timings.isEmpty)
     }
 
     @Test func emptyTranscriptInsertsNothing() async {

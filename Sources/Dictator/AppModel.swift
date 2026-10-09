@@ -31,6 +31,7 @@ final class AppModel {
     @ObservationIgnored private var isStarted = false
     private static let shortcutKey = "shortcut"
     private static let keepsMicrophoneReadyKey = "keepMicrophoneReady"
+    private static let languageKey = "language"
     private static let log = Logger(subsystem: "com.captainduckay.dictator", category: "state")
 
     init() {
@@ -47,6 +48,7 @@ final class AppModel {
         self.overlay = OverlayPanel(controller: controller)
         self.shortcut = Self.loadShortcut(from: defaults)
         self.keepsMicrophoneReady = defaults.bool(forKey: Self.keepsMicrophoneReadyKey)
+        controller.language = DictationLanguage(storedValue: defaults.string(forKey: Self.languageKey))
 
         let log = Self.log
         controller.onStateChange = { [overlay] state in
@@ -57,6 +59,10 @@ final class AppModel {
         recorder.onFailure = { message in
             log.error("microphone: \(message, privacy: .public)")
             controller.recordingFailed(message)
+        }
+        controller.onTiming = { timing in
+            // Durations only; never text or audio.
+            log.notice("dictation: \(timing.audioSeconds, format: .fixed(precision: 1), privacy: .public) s audio, release→typed \(timing.releaseToTypedSeconds, format: .fixed(precision: 2), privacy: .public) s, transcription \(timing.transcriptionSeconds, format: .fixed(precision: 2), privacy: .public) s")
         }
         controller.onError = { [overlay] message in overlay.flash(message) }
         hotkey.onPress = { controller.hotkeyPressed() }
@@ -101,6 +107,14 @@ final class AppModel {
         } catch {
             shortcutError = String(describing: error)
             resumeHotkey()
+        }
+    }
+
+    var language: DictationLanguage {
+        get { controller.language }
+        set {
+            controller.language = newValue
+            defaults.set(newValue.rawValue, forKey: Self.languageKey)
         }
     }
 

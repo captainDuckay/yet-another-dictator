@@ -13,6 +13,8 @@ final class OverlayPanel {
     /// A short message shown in place of the listening/transcribing pill.
     @Observable final class Notice {
         var text: String?
+        /// Informational notices (e.g. an update) instead of a warning.
+        var isInfo = false
     }
 
     init(controller: DictationController) {
@@ -44,8 +46,9 @@ final class OverlayPanel {
     }
 
     /// Shows `message` for a few seconds, e.g. why dictation couldn't start or type.
-    func flash(_ message: String) {
+    func flash(_ message: String, isInfo: Bool = false) {
         notice.text = message
+        notice.isInfo = isInfo
         show()
         hideNotice?.cancel()
         hideNotice = Task { [weak self] in
@@ -87,7 +90,11 @@ private struct OverlayView: View {
     private var pill: some View {
         HStack(spacing: 10) {
             if let text = notice.text {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+                if notice.isInfo {
+                    Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
+                } else {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+                }
                 Text(text)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)

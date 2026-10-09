@@ -93,6 +93,7 @@ struct DictationControllerTests {
             transcriber: transcriber,
             inserter: inserter,
             now: { clock.now },
+            stopTail: .zero,
             transcriptionTimeout: { _ in timeout }
         )
         await controller.loadModel()
@@ -172,6 +173,29 @@ struct DictationControllerTests {
         #expect(controller.state == .ready)
         #expect(await transcriber.received.isEmpty)
         #expect(inserter.inserted.isEmpty)
+    }
+
+    @Test func keepsRecordingForTheTailAfterStop() async {
+        let clock = clock
+        let controller = DictationController(
+            recorder: recorder,
+            transcriber: transcriber,
+            inserter: inserter,
+            now: { clock.now },
+            stopTail: .milliseconds(50),
+            transcriptionTimeout: { _ in .seconds(30) }
+        )
+        await controller.loadModel()
+        recorder.samplesToReturn = Array(repeating: 0.1, count: 16_000)
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        #expect(controller.state == .transcribing)
+        #expect(recorder.isRecording, "the microphone must stay open during the tail")
+
+        await waitUntilReady(controller, timeout: .seconds(5))
+        #expect(!recorder.isRecording)
+        #expect(inserter.inserted == ["hello world"])
     }
 
     @Test func cancelDuringTranscriptionTypesNothing() async {

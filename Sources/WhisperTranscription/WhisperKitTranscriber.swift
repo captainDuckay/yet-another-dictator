@@ -91,7 +91,21 @@ public actor WhisperKitTranscriber: Transcribing {
             load: true,
             download: false
         )
-        let task = Task { Engine(try await WhisperKit(config)) }
+        let task = Task {
+            let engine = Engine(try await WhisperKit(config))
+            // The first Core ML prediction after loading carries one-off setup costs. Pay them now,
+            // during "Loading model…", instead of on the user's first dictation. Failures here are
+            // harmless: the real transcription will surface any problem.
+            _ = try? await engine.whisper.transcribe(
+                audioArray: [Float](repeating: 0, count: 16_000),
+                decodeOptions: DecodingOptions(
+                    verbose: false, task: .transcribe, language: "en",
+                    temperatureFallbackCount: 0, sampleLength: 4,
+                    detectLanguage: false, withoutTimestamps: true
+                )
+            )
+            return engine
+        }
         loading = task
         do {
             engine = try await task.value
@@ -101,7 +115,7 @@ public actor WhisperKitTranscriber: Transcribing {
         }
     }
 
-    public func transcribe(_ samples: [Float]) async throws -> String {
+    public func transcribe(_ samples: [Float], language: String?) async throws -> String {
         try await prepare()
         guard let engine else { throw Failure.notLoaded }
 
@@ -110,7 +124,7 @@ public actor WhisperKitTranscriber: Transcribing {
         let work = Task {
             await previous?.value
             try Task.checkCancellation()
-            return try await Self.run(engine, samples, stop: stop)
+            return try await Self.run(engine, samples, language: language, stop: stop)
         }
         latest = Task { _ = await work.result }
         return try await withTaskCancellationHandler {
@@ -128,13 +142,17 @@ public actor WhisperKitTranscriber: Transcribing {
         var isSet: Bool { stopped.withLock { $0 } }
     }
 
-    private static func run(_ engine: Engine, _ samples: [Float], stop: StopFlag) async throws -> String {
+    private static func run(
+        _ engine: Engine, _ samples: [Float], language: String?, stop: StopFlag
+    ) async throws -> String {
         let options = DecodingOptions(
             verbose: false,
             task: .transcribe,
+            language: language,
             temperature: 0,
             usePrefillPrompt: true,
-            detectLanguage: true,
+            // Detect only when no language was chosen.
+            detectLanguage: language == nil,
             skipSpecialTokens: true,
             withoutTimestamps: true,
             // A punctuated prompt makes Whisper write complete sentences, including the final

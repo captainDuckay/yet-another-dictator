@@ -19,7 +19,7 @@ struct WhisperKitTranscriberTests {
         let samples = try Self.speak("The quick brown fox jumps over the lazy dog.")
         let transcriber = WhisperKitTranscriber(modelFolder: Self.modelFolder)
 
-        let text = try await transcriber.transcribe(samples)
+        let text = try await transcriber.transcribe(samples, language: nil)
 
         let normalised = text.lowercased()
         #expect(normalised.contains("quick brown fox"), "got: \(text)")

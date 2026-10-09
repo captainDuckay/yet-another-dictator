@@ -9,10 +9,31 @@ struct SettingsView: View {
     @State private var canListen = Permissions.canListenEvents
     @State private var requestedTyping = false
     @State private var requestedListening = false
+    @State private var loginItem = LoginItem.status
+    @State private var loginItemError: String?
 
     var body: some View {
         Form {
             ShortcutSection(model: model)
+
+            Section("General") {
+                Toggle("Open at login", isOn: Binding(
+                    get: { loginItem != .disabled },
+                    set: { enabled in
+                        loginItemError = LoginItem.set(enabled: enabled)
+                        loginItem = LoginItem.status
+                    }
+                ))
+                if loginItem == .needsApproval {
+                    LabeledContent("Allow Dictator in Login Items to finish.") {
+                        Button("Open Login Items…") { LoginItem.openSystemSettings() }
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                if let loginItemError {
+                    Text(loginItemError).foregroundStyle(.red)
+                }
+            }
 
             Section("Permissions") {
                 PermissionRow(title: "Microphone", granted: microphone == .granted) {
@@ -50,6 +71,11 @@ struct SettingsView: View {
 
             Section("Model") {
                 LabeledContent("Whisper Large v3 Turbo", value: model.controller.state.statusText)
+                Picker("Language", selection: Binding(get: { model.language }, set: { model.language = $0 })) {
+                    ForEach(DictationLanguage.allCases, id: \.self) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                }
                 Text("Runs entirely on this Mac. Audio never leaves the device and is not saved.")
                     .foregroundStyle(.secondary)
             }
@@ -75,6 +101,7 @@ struct SettingsView: View {
         microphone = Permissions.microphone
         canType = Permissions.canPostEvents
         canListen = Permissions.canListenEvents
+        loginItem = LoginItem.status
         model.retryHotkeyIfNeeded()
     }
 }

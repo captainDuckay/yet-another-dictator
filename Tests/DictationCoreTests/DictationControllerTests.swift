@@ -7,10 +7,12 @@ final class FakeRecorder: AudioRecording {
     var samplesToReturn: [Float] = []
     var startError: (any Error)?
     private(set) var isRecording = false
+    private(set) var startCount = 0
 
     func start(onLevel: @escaping @Sendable (Float) -> Void) throws {
         if let startError { throw startError }
         isRecording = true
+        startCount += 1
     }
 
     func stop() -> [Float] {
@@ -23,6 +25,7 @@ actor FakeTranscriber: Transcribing {
     var result = "hello world"
     var prepareError: (any Error)?
     private(set) var received: [[Float]] = []
+    private(set) var languages: [String?] = []
     /// How long transcription takes; `cooperative` decides whether it stops when cancelled.
     var delay: Duration?
     var cooperative = true
@@ -39,8 +42,9 @@ actor FakeTranscriber: Transcribing {
         if let prepareError { throw prepareError }
     }
 
-    func transcribe(_ samples: [Float]) async throws -> String {
+    func transcribe(_ samples: [Float], language: String?) async throws -> String {
         received.append(samples)
+        languages.append(language)
         if let delay {
             if cooperative {
                 do {
@@ -223,6 +227,11 @@ struct DictationControllerTests {
 
         controller.hotkeyPressed()
         controller.hotkeyPressed()
+        // Cancel once the transcriber is actually running, i.e. after the stop tail.
+        let started = ContinuousClock.now + .seconds(2)
+        while await transcriber.received.isEmpty, ContinuousClock.now < started {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
         controller.cancel()
 
         let deadline = ContinuousClock.now + .seconds(2)
@@ -277,6 +286,49 @@ struct DictationControllerTests {
         #expect(controller.state == .ready)
         #expect(await transcriber.received.isEmpty)
         #expect(inserter.inserted.isEmpty)
+    }
+
+    @Test func passesTheChosenLanguageToTheTranscriber() async {
+        let controller = await makeController()
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+        controller.language = .danish
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+
+        #expect(await transcriber.languages == [nil, "da"])
+    }
+
+    @Test func reportsTimingFromReleaseToTypedText() async {
+        let controller = await makeController()
+        var timings: [DictationTiming] = []
+        controller.onTiming = { timings.append($0) }
+
+        controller.hotkeyPressed()
+        clock.now += 2
+        controller.hotkeyReleased() // hold: stops here, at t = 102
+        clock.now += 0.5 // transcription and typing take 0.5 s on the fake clock
+        await waitUntilReady(controller)
+
+        #expect(timings.count == 1)
+        #expect(timings.first?.audioSeconds == 1) // FakeRecorder returns 16 000 samples
+        #expect(timings.first?.releaseToTypedSeconds == 0.5)
+    }
+
+    @Test func noTimingWhenNothingIsTyped() async {
+        await transcriber.set(result: "[BLANK_AUDIO]")
+        let controller = await makeController()
+        var timings: [DictationTiming] = []
+        controller.onTiming = { timings.append($0) }
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+
+        #expect(timings.isEmpty)
     }
 
     @Test func emptyTranscriptInsertsNothing() async {
@@ -370,6 +422,7 @@ struct DictationControllerTests {
 
     @Test func hotkeyIgnoredWhileTranscribing() async {
         let controller = await makeController()
+        await transcriber.set(delay: .milliseconds(300))
         controller.hotkeyPressed()
         controller.hotkeyPressed()
         #expect(controller.state == .transcribing)
@@ -385,5 +438,28 @@ struct DictationControllerTests {
         #expect(controller.state == .transcribing)
         await waitUntilReady(controller)
         #expect(await transcriber.received.count == 1)
+    }
+
+    @Test func cancelDuringStopTailClosesTheMicrophoneAtOnce() async {
+        let controller = DictationController(
+            recorder: recorder, transcriber: transcriber, inserter: inserter,
+            now: { [clock] in clock.now }, stopTail: .milliseconds(200)
+        )
+        await controller.loadModel()
+        recorder.samplesToReturn = [Float](repeating: 0.1, count: 16_000)
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        #expect(recorder.isRecording) // still in the tail
+        controller.cancel()
+        #expect(!recorder.isRecording)
+        #expect(controller.state == .ready)
+
+        // A new dictation right away isn't cut off by the abandoned tail.
+        controller.hotkeyPressed()
+        try? await Task.sleep(for: .milliseconds(300))
+        #expect(recorder.isRecording)
+        #expect(controller.state == .recording)
+        #expect(await transcriber.received.isEmpty)
     }
 }

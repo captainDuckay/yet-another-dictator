@@ -37,7 +37,17 @@ public actor WhisperKitTranscriber: Transcribing {
     /// used by two at once, which makes handing it across task boundaries safe.
     private final class Engine: @unchecked Sendable {
         let whisper: WhisperKit
-        init(_ whisper: WhisperKit) { self.whisper = whisper }
+        /// `DictationPrompt.text` tokenised once at load; nil if the tokenizer is unavailable.
+        let promptTokens: [Int]?
+
+        init(_ whisper: WhisperKit) {
+            self.whisper = whisper
+            promptTokens = whisper.tokenizer.map { tokenizer in
+                // Leading space: the prompt reads as preceding text, as in Whisper's own prompting.
+                tokenizer.encode(text: " " + DictationPrompt.text)
+                    .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+            }
+        }
     }
 
     private let modelFolder: URL
@@ -122,7 +132,10 @@ public actor WhisperKitTranscriber: Transcribing {
             usePrefillPrompt: true,
             detectLanguage: true,
             skipSpecialTokens: true,
-            withoutTimestamps: true
+            withoutTimestamps: true,
+            // A punctuated prompt makes Whisper write complete sentences, including the final
+            // full stop it otherwise often drops on short dictations. See `DictationPrompt`.
+            promptTokens: engine.promptTokens
         )
         let results = try await engine.whisper.transcribe(
             audioArray: samples,
@@ -131,6 +144,8 @@ public actor WhisperKitTranscriber: Transcribing {
             callback: { _ in stop.isSet ? false : nil }
         )
         try Task.checkCancellation()
-        return results.map(\.text).joined(separator: " ")
+        let text = results.map(\.text).joined(separator: " ")
+        // On silence Whisper may repeat the prompt instead of returning nothing.
+        return DictationPrompt.isEcho(text) ? "" : text
     }
 }

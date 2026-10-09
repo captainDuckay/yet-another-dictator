@@ -11,6 +11,10 @@ struct TranscriptCleanerTests {
         ("line one\nline two\tend", "line one line two end"),
         ("bell\u{07}escape\u{1B}", "bellescape"),
         ("👩‍💻 works", "👩‍💻 works"),
+        // Sentence punctuation must survive cleanup untouched.
+        (" Hvad så? Det er fint. ", "Hvad så? Det er fint."),
+        ("Wait! Really?! Yes… «quoted», ¿qué? ¡sí!", "Wait! Really?! Yes… «quoted», ¿qué? ¡sí!"),
+        ("End of line.\nNext line.", "End of line. Next line."),
     ])
     func cleans(raw: String, expected: String) {
         #expect(TranscriptCleaner.clean(raw) == expected)
@@ -31,8 +35,47 @@ struct TextChunkerTests {
         #expect(chunks.allSatisfy { $0.allSatisfy { $0 == "👩‍👩‍👧‍👦" } })
     }
 
+    @Test func keepsPunctuationAcrossChunkBoundaries() {
+        let text = "Det går godt, tak. Hello, how are you? I'm fine, thanks!"
+        let chunks = TextChunker.chunks(text)
+        #expect(chunks.joined() == text)
+        #expect(chunks.count > 1)
+    }
+
     @Test func emptyTextHasNoChunks() {
         #expect(TextChunker.chunks("").isEmpty)
+    }
+}
+
+struct DictationPromptTests {
+    @Test func promptIsPunctuatedInBothLanguages() {
+        let prompt = DictationPrompt.text
+        #expect(prompt.contains("?") && prompt.contains("."))
+        #expect(prompt.contains("tak") && prompt.contains("thanks"))
+        #expect(prompt.last == ".")
+    }
+
+    @Test(arguments: [
+        DictationPrompt.text,
+        "Hej, hvordan går det? Det går godt, tak. Hello, how are you?",
+        "hello how are you i'm fine thanks",
+        " Det går godt, tak. Hello, how are you? I'm fine, thanks. ",
+    ])
+    func detectsPromptEcho(_ transcript: String) {
+        #expect(DictationPrompt.isEcho(transcript))
+    }
+
+    @Test(arguments: [
+        "",
+        "Tak.",
+        "Hello, how are you?",
+        "Det går godt, tak.",
+        "Hello, how are you? I'm fine, thanks. And you?",
+        "Please send the report by Friday.",
+        "Hej, hvordan går det med projektet i dag? Det går godt nu.",
+    ])
+    func keepsRealDictation(_ transcript: String) {
+        #expect(!DictationPrompt.isEcho(transcript))
     }
 }
 

@@ -24,12 +24,14 @@ final class AppModel {
 
     @ObservationIgnored private let recorder: MicrophoneRecorder
     @ObservationIgnored private let hotkey = EventTapHotkey()
+    @ObservationIgnored private let whatsNew = WhatsNewWindow()
     @ObservationIgnored private let overlay: OverlayPanel
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private var isSuspended = false
     /// False until this copy is confirmed to be the only one running.
     @ObservationIgnored private var isStarted = false
     private static let shortcutKey = "shortcut"
+    private static let lastSeenVersionKey = "lastSeenVersion"
     private static let keepsMicrophoneReadyKey = "keepMicrophoneReady"
     private static let languageKey = "language"
     private static let log = Logger(subsystem: "com.captainduckay.dictator", category: "state")
@@ -89,6 +91,7 @@ final class AppModel {
 
     private func start() {
         isStarted = true
+        showWhatsNewIfUpdated()
         resumeHotkey()
         Task { await controller.loadModel() }
         Task {
@@ -97,6 +100,30 @@ final class AppModel {
             }
             recorder.prepare()
             recorder.setKeepsReady(keepsMicrophoneReady)
+        }
+    }
+
+    func showWhatsNew() {
+        whatsNew.showCurrent()
+    }
+
+    /// Shows the release notes once, on the first launch after the version changed. A fresh
+    /// install gets a short welcome with this version's notes instead.
+    private func showWhatsNewIfUpdated() {
+        guard let current = WhatsNewWindow.currentVersion else { return }
+        let lastSeen = defaults.string(forKey: Self.lastSeenVersionKey)
+        defaults.set(current.description, forKey: Self.lastSeenVersionKey)
+        switch WhatsNew.decide(current: current, lastSeen: lastSeen, changelog: WhatsNewWindow.bundledChangelog()) {
+        case .none:
+            break
+        case .welcome(let entries):
+            whatsNew.show(.init(
+                title: "Welcome to Dictator",
+                intro: "Press your shortcut (\(shortcut.displayString)), speak, and the text is typed where your cursor is.",
+                entries: entries
+            ))
+        case .updated(let entries):
+            whatsNew.show(.init(title: "What's New in Dictator", intro: "Updated to \(current.description)", entries: entries))
         }
     }
 

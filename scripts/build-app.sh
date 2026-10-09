@@ -20,6 +20,8 @@ cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
 if [[ -n "${VERSION:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$app/Contents/Info.plist"
 fi
+# Shown in the What's New window; bundled so it works offline.
+cp "$root/CHANGELOG.md" "$app/Contents/Resources/CHANGELOG.md"
 iconutil --convert icns "$root/Resources/AppIcon.iconset" --output "$app/Contents/Resources/AppIcon.icns"
 # Hidden files (e.g. partial downloads) are excluded.
 rsync -a --exclude '.*' "$root/Model/" "$app/Contents/Resources/Model/"

@@ -90,7 +90,8 @@ flowchart LR
   Input Monitoring: the tap sees every key event, but each is only compared in memory against the
   shortcut and immediately dropped; nothing is stored, logged or published. Dictator's own typed
   text is ignored. The shortcut's non-modifier keys are withheld from other apps when macOS allows
-  an active tap (otherwise they pass through). Modifier keys, fn and Caps Lock always reach other
+  an active tap (otherwise they pass through, and Settings warns if the shortcut would type into
+  the focused app). Modifier keys, fn and Caps Lock always reach other
   apps (Caps Lock still toggles, and fn may still open the emoji picker depending on System
   Settings). Like all event taps, it can't see keys while a password field has secure input on.
 - **Supply chain:** one third-party dependency, WhisperKit, pinned to an exact version

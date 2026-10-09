@@ -23,11 +23,21 @@ final class EventTapHotkey {
         }
     }
 
+    /// How the tap was installed. macOS may refuse a tap that can withhold events (e.g. for a
+    /// sandboxed app); the listen-only fallback still detects the shortcut, but its keys then also
+    /// reach the focused app.
+    enum Mode: Equatable, Sendable {
+        case withholdsKeys
+        case listenOnly
+    }
+
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
     var onInterrupt: (() -> Void)?
 
     private(set) var isRegistered = false
+    /// The mode of the current tap, or of the last one when unregistered; nil until first registered.
+    private(set) var mode: Mode?
     private var shortcut: Shortcut?
     private var matcher: ChordMatcher?
     private var tap: CFMachPort?
@@ -56,7 +66,16 @@ final class EventTapHotkey {
                 eventsOfInterest: mask, callback: callback, userInfo: refcon
             )
         }
-        guard let tap = create(.defaultTap) ?? create(.listenOnly) else { throw Failure.tapUnavailable }
+        let tap: CFMachPort
+        if let active = create(.defaultTap) {
+            tap = active
+            mode = .withholdsKeys
+        } else if let passive = create(.listenOnly) {
+            tap = passive
+            mode = .listenOnly
+        } else {
+            throw Failure.tapUnavailable
+        }
         let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)

@@ -29,6 +29,16 @@ public protocol TextInserting: AnyObject {
 
 // MARK: - State machine
 
+/// How long one dictation took, for latency logging. Contains no text or audio.
+public struct DictationTiming: Equatable, Sendable {
+    /// Length of the recorded audio.
+    public var audioSeconds: Double
+    /// From the moment the user stopped (key release or second tap) to the text being typed.
+    public var releaseToTypedSeconds: Double
+    /// Time spent in the transcriber alone.
+    public var transcriptionSeconds: Double
+}
+
 public enum DictationState: Equatable, Sendable {
     case loadingModel
     case ready
@@ -63,6 +73,8 @@ public final class DictationController {
     /// Language for the next transcriptions.
     public var language: DictationLanguage = .automatic
 
+    /// Called after each dictation is typed, with how long it took.
+    @ObservationIgnored public var onTiming: ((DictationTiming) -> Void)?
     @ObservationIgnored public var onStateChange: ((DictationState) -> Void)?
     /// Called whenever a new error is reported, e.g. to show it briefly on screen.
     @ObservationIgnored public var onError: ((String) -> Void)?
@@ -200,6 +212,7 @@ public final class DictationController {
     }
 
     private func finishRecording() {
+        let stoppedAt = now()
         let samples = recorder.stop()
         level = 0
         // Too short or silent: nothing was said, and Whisper would only invent text.
@@ -211,7 +224,7 @@ public final class DictationController {
         generation += 1
         let id = generation
         let timeout = transcriptionTimeout(samples.count)
-        transcription = Task { await transcribeAndInsert(samples, id: id) }
+        transcription = Task { await transcribeAndInsert(samples, id: id, stoppedAt: stoppedAt) }
         watchdog = Task { [weak self] in
             guard (try? await Task.sleep(for: timeout)) != nil else { return }
             guard let self, generation == id, state == .transcribing else { return }
@@ -230,13 +243,16 @@ public final class DictationController {
         watchdog = nil
     }
 
-    private func transcribeAndInsert(_ samples: [Float], id: Int) async {
+    private func transcribeAndInsert(_ samples: [Float], id: Int, stoppedAt: TimeInterval) async {
         let outcome: Result<String, any Error>
+        let transcriptionStart = now()
+        var transcriptionEnd = transcriptionStart
         do {
             outcome = .success(try await transcriber.transcribe(samples, language: language.whisperCode))
         } catch {
             outcome = .failure(error)
         }
+        transcriptionEnd = now()
         // Cancelled or timed out meanwhile: the user has moved on, so type nothing.
         guard id == generation else { return }
         watchdog?.cancel()
@@ -254,6 +270,11 @@ public final class DictationController {
         do {
             try inserter.insert(text)
             undeliveredTranscript = nil
+            onTiming?(DictationTiming(
+                audioSeconds: Double(samples.count) / Self.sampleRate,
+                releaseToTypedSeconds: now() - stoppedAt,
+                transcriptionSeconds: transcriptionEnd - transcriptionStart
+            ))
         } catch {
             undeliveredTranscript = text
             report("\(error.localizedDescription) Your dictation is kept in the menu bar menu.")

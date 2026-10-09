@@ -44,7 +44,8 @@ when `Model/` exists; run `scripts/fetch-model.sh` first.
 - **Release** (`.github/workflows/release.yml`): publishing a GitHub release builds
   `Dictator.app` (version taken from the tag, `v` prefix stripped) and attaches
   `Dictator-<tag>-macos-arm64.zip` plus its `.sha256`. Builds are ad-hoc signed and not notarised,
-  so users must right-click → Open (or remove quarantine) on first launch.
+  so on first launch users must allow it via System Settings → Privacy & Security → Open Anyway
+  (or `xattr -dr com.apple.quarantine Dictator.app`).
 
 ## Architecture
 

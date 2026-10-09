@@ -268,6 +268,35 @@ struct DictationControllerTests {
         #expect(await transcriber.languages == [nil, "da"])
     }
 
+    @Test func reportsTimingFromReleaseToTypedText() async {
+        let controller = await makeController()
+        var timings: [DictationTiming] = []
+        controller.onTiming = { timings.append($0) }
+
+        controller.hotkeyPressed()
+        clock.now += 2
+        controller.hotkeyReleased() // hold: stops here, at t = 102
+        clock.now += 0.5 // transcription and typing take 0.5 s on the fake clock
+        await waitUntilReady(controller)
+
+        #expect(timings.count == 1)
+        #expect(timings.first?.audioSeconds == 1) // FakeRecorder returns 16 000 samples
+        #expect(timings.first?.releaseToTypedSeconds == 0.5)
+    }
+
+    @Test func noTimingWhenNothingIsTyped() async {
+        await transcriber.set(result: "[BLANK_AUDIO]")
+        let controller = await makeController()
+        var timings: [DictationTiming] = []
+        controller.onTiming = { timings.append($0) }
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+
+        #expect(timings.isEmpty)
+    }
+
     @Test func emptyTranscriptInsertsNothing() async {
         await transcriber.set(result: " [BLANK_AUDIO] ")
         let controller = await makeController()

@@ -81,7 +81,21 @@ public actor WhisperKitTranscriber: Transcribing {
             load: true,
             download: false
         )
-        let task = Task { Engine(try await WhisperKit(config)) }
+        let task = Task {
+            let engine = Engine(try await WhisperKit(config))
+            // The first Core ML prediction after loading carries one-off setup costs. Pay them now,
+            // during "Loading model…", instead of on the user's first dictation. Failures here are
+            // harmless: the real transcription will surface any problem.
+            _ = try? await engine.whisper.transcribe(
+                audioArray: [Float](repeating: 0, count: 16_000),
+                decodeOptions: DecodingOptions(
+                    verbose: false, task: .transcribe, language: "en",
+                    temperatureFallbackCount: 0, sampleLength: 4,
+                    detectLanguage: false, withoutTimestamps: true
+                )
+            )
+            return engine
+        }
         loading = task
         do {
             engine = try await task.value

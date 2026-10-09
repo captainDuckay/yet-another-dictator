@@ -12,7 +12,7 @@ final class KeystrokeTextInserter: TextInserting {
         case notPermitted, eventCreationFailed
         var errorDescription: String? {
             switch self {
-            case .notPermitted: "Dictator needs Accessibility permission to type. Enable it in System Settings → Privacy & Security → Accessibility."
+            case .notPermitted: "Dictator needs Accessibility permission to type. Enable it in System Settings → Privacy & Security → Accessibility, then relaunch Dictator."
             case .eventCreationFailed: "Could not create keyboard events."
             }
         }

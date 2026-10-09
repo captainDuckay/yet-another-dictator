@@ -159,8 +159,10 @@ struct DictationControllerTests {
 
         controller.hotkeyPressed()
         controller.hotkeyPressed()
+        await waitUntilReady(controller)
 
         #expect(controller.state == .ready)
+        #expect(!recorder.isRecording)
         #expect(await transcriber.received.isEmpty)
     }
 
@@ -371,9 +373,17 @@ struct DictationControllerTests {
         controller.hotkeyPressed()
         controller.hotkeyPressed()
         #expect(controller.state == .transcribing)
+        // stopTail is zero, but stop still runs on a Task; wait for the mic to close.
+        let deadline = ContinuousClock.now + .seconds(2)
+        while recorder.isRecording, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(!recorder.isRecording)
 
         controller.hotkeyPressed()
-        #expect(!recorder.isRecording)
+        #expect(recorder.startCount == 1)
+        #expect(controller.state == .transcribing)
         await waitUntilReady(controller)
+        #expect(await transcriber.received.count == 1)
     }
 }

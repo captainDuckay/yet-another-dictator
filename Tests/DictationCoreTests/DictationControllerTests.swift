@@ -240,6 +240,18 @@ struct DictationControllerTests {
         #expect(DictationController.defaultTranscriptionTimeout(sampleCount: 16_000 * 60) == .seconds(90))
     }
 
+    @Test func silentRecordingIsNotTranscribed() async {
+        let controller = await makeController()
+        recorder.samplesToReturn = Array(repeating: 0, count: 32_000)
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+
+        #expect(controller.state == .ready)
+        #expect(await transcriber.received.isEmpty)
+        #expect(inserter.inserted.isEmpty)
+    }
+
     @Test func emptyTranscriptInsertsNothing() async {
         await transcriber.set(result: " [BLANK_AUDIO] ")
         let controller = await makeController()

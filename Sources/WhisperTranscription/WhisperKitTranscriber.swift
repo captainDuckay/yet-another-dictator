@@ -40,6 +40,10 @@ public actor WhisperKitTranscriber: Transcribing {
         init(_ whisper: WhisperKit) { self.whisper = whisper }
     }
 
+    /// Output that compresses better than this (as WhisperKit measures it) is too repetitive to be
+    /// real speech. Same value as WhisperKit's and OpenAI's default.
+    static let compressionRatioThreshold: Float = 2.4
+
     private let modelFolder: URL
     private var engine: Engine?
     private var loading: Task<Engine, any Error>?
@@ -122,7 +126,15 @@ public actor WhisperKitTranscriber: Transcribing {
             usePrefillPrompt: true,
             detectLanguage: true,
             skipSpecialTokens: true,
-            withoutTimestamps: true
+            withoutTimestamps: true,
+            // Whisper's standard quality checks, spelled out so they're deliberate. A window that
+            // fails one is decoded again at a higher temperature. noSpeechThreshold has no effect
+            // in WhisperKit 1.1.1 (no-speech probability is not computed); silence is instead
+            // rejected before transcription by `SpeechActivity`.
+            compressionRatioThreshold: Self.compressionRatioThreshold,
+            logProbThreshold: -1.0,
+            firstTokenLogProbThreshold: -1.5,
+            noSpeechThreshold: 0.6
         )
         let results = try await engine.whisper.transcribe(
             audioArray: samples,
@@ -131,6 +143,12 @@ public actor WhisperKitTranscriber: Transcribing {
             callback: { _ in stop.isSet ? false : nil }
         )
         try Task.checkCancellation()
-        return results.map(\.text).joined(separator: " ")
+        // A segment still this repetitive after every fallback is a hallucination loop
+        // ("tak tak tak …"), not dictation.
+        return results
+            .flatMap(\.segments)
+            .filter { $0.compressionRatio <= Self.compressionRatioThreshold }
+            .map(\.text)
+            .joined(separator: " ")
     }
 }

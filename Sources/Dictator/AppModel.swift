@@ -77,6 +77,7 @@ final class AppModel {
             log.notice("state: \(String(describing: state), privacy: .public)")
             overlay.update(for: state)
         }
+        recorder.onCapacityReached = { controller.recordingReachedLimit() }
         recorder.onFailure = { message in
             log.error("microphone: \(message, privacy: .public)")
             controller.recordingFailed(message)

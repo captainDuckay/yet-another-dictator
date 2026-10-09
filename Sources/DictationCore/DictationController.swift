@@ -204,6 +204,15 @@ public final class DictationController {
         report(message)
     }
 
+    /// The recording reached the capture buffer's capacity (10 minutes) and stopped growing.
+    /// Unlike a failure, what was captured is complete, so it is transcribed and typed as usual.
+    public func recordingReachedLimit() {
+        guard state == .recording else { return }
+        pressedAt = nil
+        finishRecording()
+        report("Recording reached the 10-minute limit and was stopped.")
+    }
+
     /// Deletes exactly the characters the last dictation typed, if nothing else happened since.
     public func undoLastDictation() {
         guard state == .ready, let count = history.takeUndo() else { return }

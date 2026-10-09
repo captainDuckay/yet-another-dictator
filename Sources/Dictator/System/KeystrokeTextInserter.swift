@@ -18,11 +18,15 @@ final class KeystrokeTextInserter: TextInserting {
         }
     }
 
-    func insert(_ text: String) throws {
+    func preflight() throws {
         guard Permissions.canPostEvents else {
             Permissions.requestPostEvents()
             throw Failure.notPermitted
         }
+    }
+
+    func insert(_ text: String) throws {
+        try preflight()
         // A private event source keeps physically held modifiers (e.g. from the hotkey) out of our events.
         let source = CGEventSource(stateID: .privateState)
         for chunk in TextChunker.chunks(text) {

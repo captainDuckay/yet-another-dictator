@@ -34,7 +34,7 @@ struct WhisperKitTranscriberTests {
     func shortSentenceEndsWithPunctuation(_ sentence: String) async throws {
         let transcriber = WhisperKitTranscriber(modelFolder: Self.modelFolder)
 
-        let text = TranscriptCleaner.clean(try await transcriber.transcribe(try Self.speak(sentence)))
+        let text = TranscriptCleaner.clean(try await transcriber.transcribe(try Self.speak(sentence), language: nil))
 
         #expect(text.last.map { ".?!".contains($0) } == true, "got: \(text)")
     }
@@ -43,7 +43,7 @@ struct WhisperKitTranscriberTests {
     func silenceDoesNotEchoThePrompt() async throws {
         let transcriber = WhisperKitTranscriber(modelFolder: Self.modelFolder)
 
-        let text = try await transcriber.transcribe(Array(repeating: 0, count: 32_000))
+        let text = try await transcriber.transcribe(Array(repeating: 0, count: 32_000), language: nil)
 
         #expect(!text.contains("hvordan går det"), "got: \(text)")
         #expect(!text.contains("how are you"), "got: \(text)")

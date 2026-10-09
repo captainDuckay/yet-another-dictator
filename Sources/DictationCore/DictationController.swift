@@ -172,6 +172,17 @@ public final class DictationController {
         }
     }
 
+    /// The microphone stopped on its own (device unplugged, audio system error) during recording.
+    /// Whatever was captured is dropped, since it may be cut off mid-word.
+    public func recordingFailed(_ message: String) {
+        guard state == .recording else { return }
+        pressedAt = nil
+        _ = recorder.stop()
+        level = 0
+        state = .ready
+        report(message)
+    }
+
     /// Types the undelivered transcript again, e.g. after the user fixed the permission.
     public func retryUndelivered() {
         guard state == .ready, let text = undeliveredTranscript else { return }

@@ -14,6 +14,15 @@ final class AppModel {
     /// How the shortcut is being watched; nil until the hotkey was registered once.
     private(set) var hotkeyMode: EventTapHotkey.Mode?
 
+    /// Keep the microphone running between dictations so the first syllable is never cut off.
+    var keepsMicrophoneReady: Bool {
+        didSet {
+            defaults.set(keepsMicrophoneReady, forKey: Self.keepsMicrophoneReadyKey)
+            recorder.setKeepsReady(keepsMicrophoneReady)
+        }
+    }
+
+    @ObservationIgnored private let recorder: MicrophoneRecorder
     @ObservationIgnored private let hotkey = EventTapHotkey()
     @ObservationIgnored private let overlay: OverlayPanel
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -21,20 +30,24 @@ final class AppModel {
     /// False until this copy is confirmed to be the only one running.
     @ObservationIgnored private var isStarted = false
     private static let shortcutKey = "shortcut"
+    private static let keepsMicrophoneReadyKey = "keepMicrophoneReady"
     private static let languageKey = "language"
     private static let log = Logger(subsystem: "com.captainduckay.dictator", category: "state")
 
     init() {
         let modelFolder = WhisperKitTranscriber.bundledModelFolder()
             ?? URL(filePath: "/nonexistent", directoryHint: .isDirectory)
+        let recorder = MicrophoneRecorder()
+        self.recorder = recorder
         let controller = DictationController(
-            recorder: MicrophoneRecorder(),
+            recorder: recorder,
             transcriber: WhisperKitTranscriber(modelFolder: modelFolder),
             inserter: KeystrokeTextInserter()
         )
         self.controller = controller
         self.overlay = OverlayPanel(controller: controller)
         self.shortcut = Self.loadShortcut(from: defaults)
+        self.keepsMicrophoneReady = defaults.bool(forKey: Self.keepsMicrophoneReadyKey)
         controller.language = DictationLanguage(storedValue: defaults.string(forKey: Self.languageKey))
 
         let log = Self.log
@@ -42,6 +55,10 @@ final class AppModel {
             // State only — transcripts and audio are never logged.
             log.notice("state: \(String(describing: state), privacy: .public)")
             overlay.update(for: state)
+        }
+        recorder.onFailure = { message in
+            log.error("microphone: \(message, privacy: .public)")
+            controller.recordingFailed(message)
         }
         controller.onTiming = { timing in
             // Durations only; never text or audio.
@@ -66,8 +83,12 @@ final class AppModel {
         isStarted = true
         resumeHotkey()
         Task { await controller.loadModel() }
-        if Permissions.microphone == .notDetermined {
-            Task { _ = await Permissions.requestMicrophone() }
+        Task {
+            if Permissions.microphone == .notDetermined {
+                _ = await Permissions.requestMicrophone()
+            }
+            recorder.prepare()
+            recorder.setKeepsReady(keepsMicrophoneReady)
         }
     }
 

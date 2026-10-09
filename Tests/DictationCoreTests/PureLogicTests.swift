@@ -308,3 +308,35 @@ struct ChordRecorderTests {
         #expect(r.apply(.flagsChanged(KeyCode.capsLock, flags: 0x10000)) == [KeyCode.capsLock])
     }
 }
+
+@Suite struct AudioRingBufferTests {
+    @Test func keepsEverythingUntilFull() {
+        var ring = AudioRingBuffer(capacity: 4)
+        ring.append(contentsOf: [1, 2, 3])
+        #expect(ring.samples == [1, 2, 3])
+    }
+
+    @Test func keepsOnlyTheNewestSamples() {
+        var ring = AudioRingBuffer(capacity: 4)
+        ring.append(contentsOf: [1, 2, 3])
+        ring.append(contentsOf: [4, 5, 6])
+        #expect(ring.samples == [3, 4, 5, 6])
+        ring.append(contentsOf: [7, 8, 9, 10, 11])
+        #expect(ring.samples == [8, 9, 10, 11])
+    }
+
+    @Test func removeAllEmptiesIt() {
+        var ring = AudioRingBuffer(capacity: 2)
+        ring.append(contentsOf: [1, 2, 3])
+        ring.removeAll()
+        #expect(ring.samples.isEmpty)
+        ring.append(contentsOf: [4])
+        #expect(ring.samples == [4])
+    }
+
+    @Test func zeroCapacityHoldsNothing() {
+        var ring = AudioRingBuffer(capacity: 0)
+        ring.append(contentsOf: [1, 2])
+        #expect(ring.samples.isEmpty)
+    }
+}

@@ -1,0 +1,40 @@
+name: Quality gate
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Toolchain
+        run: swift --version
+
+      # Fails if Package.resolved is out of sync with Package.swift.
+      - name: Resolve dependencies
+        run: swift package resolve --force-resolved-versions
+
+      - name: Build (release, arm64)
+        run: swift build -c release --arch arm64
+
+      # The end-to-end WhisperKit test is skipped because Model/ is not fetched here.
+      - name: Test
+        run: swift test

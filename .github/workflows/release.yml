@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+
+jobs:
+  build-and-attach:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      # Runs before the model is restored, so the slow end-to-end Core ML test is skipped.
+      - name: Test
+        run: swift test
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: Model
+          key: model-${{ hashFiles('scripts/model-manifest.txt') }}
+
+      - name: Build app
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: VERSION="${TAG#v}" scripts/build-app.sh
+
+      - name: Package
+        id: package
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          zip="build/Dictator-${TAG}-macos-arm64.zip"
+          ditto -c -k --keepParent build/Dictator.app "$zip"
+          shasum -a 256 "$zip" | sed 's|build/||' > "$zip.sha256"
+          ls -lh build/*.zip
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          ZIP: ${{ steps.package.outputs.zip }}
+        run: gh release upload "$TAG" "$ZIP" "$ZIP.sha256" --clobber --repo "$GITHUB_REPOSITORY"

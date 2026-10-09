@@ -1,0 +1,29 @@
+# Changelog
+
+All notable changes to Dictator. The newest version is shown in the app's What's New window.
+
+## [Unreleased]
+
+### Added
+- What's New window, shown once after an update; reopen it from the menu.
+- Choose the dictation language: Automatic, Dansk or English.
+- Open at login.
+- Keep microphone ready (optional): catches the first word if you start speaking as you press the shortcut.
+- Settings shows when the shortcut's keys also reach the app you're typing in.
+- Any key or key combination can be the shortcut, shown on a keyboard.
+
+### Improved
+- Sentences end with proper punctuation, and the last word is no longer cut off.
+- Faster first dictation: the model is warmed up at launch.
+- Starting a dictation never blocks the keyboard or the app; the microphone follows headset and input changes.
+- Silence and very quiet recordings are no longer turned into made-up text.
+
+### Fixed
+- Transcription can be cancelled and stops itself if it takes far too long.
+- Dictator checks it may type before you speak, and keeps text it couldn't type in the menu so you can type it again.
+- Only one copy of Dictator runs at a time.
+- Granting Accessibility now prompts a relaunch so it takes effect.
+
+## [0.0.1] - 2026-10-09
+
+First build: hold or tap a shortcut, speak, and the text is typed where your cursor is. Runs entirely on your Mac with a bundled Whisper model.

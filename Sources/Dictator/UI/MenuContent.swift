@@ -35,6 +35,14 @@ struct MenuContent: View {
             Button("Discard") { model.controller.discardUndelivered() }
         }
         Divider()
+        if let update = model.availableUpdate {
+            Button("Update Available: v\(update.version.description)…") { model.openUpdatePage() }
+        }
+        Button(model.isCheckingForUpdates ? "Checking for Updates…" : "Check for Updates…") {
+            model.checkForUpdatesNow()
+        }
+        .disabled(model.isCheckingForUpdates)
+        Button("What's New") { model.showWhatsNew() }
         Button("Settings…") {
             NSApp.activate()
             openSettings()

@@ -27,6 +27,16 @@ final class AppModel {
 
     @ObservationIgnored private let recorder: MicrophoneRecorder
     @ObservationIgnored private let hotkey = EventTapHotkey()
+    @ObservationIgnored private let whatsNew = WhatsNewWindow()
+    @ObservationIgnored private let updateChecker = UpdateChecker()
+
+    /// A newer release found by the update check, shown in the menu.
+    private(set) var availableUpdate: AvailableUpdate?
+    private(set) var isCheckingForUpdates = false
+    /// Daily check for a newer release on GitHub. On by default; off means no network use at all.
+    var checksForUpdates: Bool {
+        didSet { defaults.set(checksForUpdates, forKey: Self.checksForUpdatesKey) }
+    }
     @ObservationIgnored private let overlay: OverlayPanel
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private var isSuspended = false
@@ -34,6 +44,10 @@ final class AppModel {
     /// False until this copy is confirmed to be the only one running.
     @ObservationIgnored private var isStarted = false
     private static let shortcutKey = "shortcut"
+    private static let lastSeenVersionKey = "lastSeenVersion"
+    private static let checksForUpdatesKey = "checkForUpdates"
+    private static let lastUpdateCheckKey = "lastUpdateCheck"
+    private static let notifiedUpdateKey = "notifiedUpdateVersion"
     private static let keepsMicrophoneReadyKey = "keepMicrophoneReady"
     private static let undoShortcutKey = "undoShortcut"
     private static let languageKey = "language"
@@ -52,6 +66,7 @@ final class AppModel {
         self.controller = controller
         self.overlay = OverlayPanel(controller: controller)
         self.shortcut = Self.loadShortcut(from: defaults)
+        self.checksForUpdates = defaults.object(forKey: Self.checksForUpdatesKey) as? Bool ?? true
         self.keepsMicrophoneReady = defaults.bool(forKey: Self.keepsMicrophoneReadyKey)
         self.undoShortcut = Self.loadShortcut(from: defaults, key: Self.undoShortcutKey)
         controller.language = DictationLanguage(storedValue: defaults.string(forKey: Self.languageKey))
@@ -106,6 +121,8 @@ final class AppModel {
 
     private func start() {
         isStarted = true
+        showWhatsNewIfUpdated()
+        Task { await runDailyUpdateChecks() }
         resumeHotkey()
         Task { await controller.loadModel() }
         Task {
@@ -114,6 +131,75 @@ final class AppModel {
             }
             recorder.prepare()
             recorder.setKeepsReady(keepsMicrophoneReady)
+        }
+    }
+
+    /// "Check for Updates…": checks now and always says what it found.
+    func checkForUpdatesNow() {
+        Task { await checkForUpdates(userInitiated: true) }
+    }
+
+    func openUpdatePage() {
+        guard let availableUpdate else { return }
+        NSWorkspace.shared.open(availableUpdate.pageURL)
+    }
+
+    private func runDailyUpdateChecks() async {
+        while !Task.isCancelled {
+            let lastCheck = defaults.object(forKey: Self.lastUpdateCheckKey) as? Date
+            if checksForUpdates, UpdateCheck.isDue(lastCheck: lastCheck, now: Date()) {
+                await checkForUpdates(userInitiated: false)
+            }
+            try? await Task.sleep(for: .seconds(60 * 60))
+        }
+    }
+
+    private func checkForUpdates(userInitiated: Bool) async {
+        guard !isCheckingForUpdates, let current = WhatsNewWindow.currentVersion else { return }
+        isCheckingForUpdates = true
+        defer { isCheckingForUpdates = false }
+        do {
+            let update = try await updateChecker.newestRelease(above: current)
+            defaults.set(Date(), forKey: Self.lastUpdateCheckKey)
+            availableUpdate = update
+            if let update {
+                let version = update.version.description
+                // Automatic checks mention each new version once; the menu item stays until updated.
+                if userInitiated || defaults.string(forKey: Self.notifiedUpdateKey) != version {
+                    defaults.set(version, forKey: Self.notifiedUpdateKey)
+                    overlay.flash("Dictator \(version) is available. Open the menu bar menu to get it.", isInfo: true)
+                }
+            } else if userInitiated {
+                overlay.flash("Dictator \(current.description) is up to date.", isInfo: true)
+            }
+            Self.log.notice("update check: \(update?.version.description ?? "none", privacy: .public)")
+        } catch {
+            Self.log.error("update check failed: \(error.localizedDescription, privacy: .public)")
+            if userInitiated { overlay.flash("Couldn't check for updates: \(error.localizedDescription)") }
+        }
+    }
+
+    func showWhatsNew() {
+        whatsNew.showCurrent()
+    }
+
+    /// Shows the release notes once, on the first launch after the version changed. A fresh
+    /// install gets a short welcome with this version's notes instead.
+    private func showWhatsNewIfUpdated() {
+        guard let current = WhatsNewWindow.currentVersion else { return }
+        let lastSeen = defaults.string(forKey: Self.lastSeenVersionKey)
+        defaults.set(current.description, forKey: Self.lastSeenVersionKey)
+        switch WhatsNew.decide(current: current, lastSeen: lastSeen, changelog: WhatsNewWindow.bundledChangelog()) {
+        case .none:
+            break
+        case .welcome(let entries):
+            whatsNew.show(.init(
+                title: "Welcome to Dictator",
+                intro: "Press your shortcut (\(shortcut.displayString)), speak, and the text is typed where your cursor is.",
+                entries: entries
+            ))
+        case .updated(let entries):
+            whatsNew.show(.init(title: "What's New in Dictator", intro: "Updated to \(current.description)", entries: entries))
         }
     }
 

@@ -34,6 +34,13 @@ struct SettingsView: View {
                     Text(loginItemError).foregroundStyle(.red)
                 }
                 Toggle(isOn: Binding(
+                    get: { model.checksForUpdates },
+                    set: { model.checksForUpdates = $0 }
+                )) {
+                    Text("Check for updates daily")
+                    Text("Asks GitHub whether a newer version exists. Nothing is downloaded or installed, and dictation never uses the network.")
+                }
+                Toggle(isOn: Binding(
                     get: { model.keepsMicrophoneReady },
                     set: { model.keepsMicrophoneReady = $0 }
                 )) {

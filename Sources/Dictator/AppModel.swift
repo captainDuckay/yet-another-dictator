@@ -18,6 +18,8 @@ final class AppModel {
     @ObservationIgnored private let overlay: OverlayPanel
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private var isSuspended = false
+    /// False until this copy is confirmed to be the only one running.
+    @ObservationIgnored private var isStarted = false
     private static let shortcutKey = "shortcut"
     private static let log = Logger(subsystem: "com.captainduckay.dictator", category: "state")
 
@@ -42,8 +44,20 @@ final class AppModel {
         hotkey.onPress = { controller.hotkeyPressed() }
         hotkey.onRelease = { controller.hotkeyReleased() }
         hotkey.onInterrupt = { controller.cancel() }
-        resumeHotkey()
 
+        Task {
+            // Another copy already running owns the keyboard tap; quit before installing ours.
+            guard await SingleInstance.claim() else {
+                NSApp.terminate(nil)
+                return
+            }
+            start()
+        }
+    }
+
+    private func start() {
+        isStarted = true
+        resumeHotkey()
         Task { await controller.loadModel() }
         if Permissions.microphone == .notDetermined {
             Task { _ = await Permissions.requestMicrophone() }
@@ -94,7 +108,7 @@ final class AppModel {
 
     /// Retries registration, e.g. after the user granted Input Monitoring.
     func retryHotkeyIfNeeded() {
-        if !hotkey.isRegistered, !isSuspended { resumeHotkey() }
+        if isStarted, !hotkey.isRegistered, !isSuspended { resumeHotkey() }
     }
 
     private static func loadShortcut(from defaults: UserDefaults) -> Shortcut {

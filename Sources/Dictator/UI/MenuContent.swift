@@ -27,6 +27,7 @@ struct MenuContent: View {
             Button("Discard") { model.controller.discardUndelivered() }
         }
         Divider()
+        Button("What's New") { model.showWhatsNew() }
         Button("Settings…") {
             NSApp.activate()
             openSettings()

@@ -268,6 +268,45 @@ struct DictationControllerTests {
         #expect(await transcriber.languages == [nil, "da"])
     }
 
+    private func dictate(_ controller: DictationController, _ result: String) async {
+        await transcriber.set(result: result)
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+    }
+
+    @Test func consecutiveDictationsAreSpacedAndCapitalized() async {
+        let controller = await makeController()
+        await dictate(controller, "Hello world.")
+        await dictate(controller, "and more")
+        await dictate(controller, "So that's it.")
+        #expect(inserter.inserted == ["Hello world.", " And more", " so that's it."])
+    }
+
+    @Test func otherInputMakesTheContextUnknown() async {
+        let controller = await makeController()
+        await dictate(controller, "Hello world.")
+        controller.noteOtherInput()
+        await dictate(controller, "and more.")
+        #expect(inserter.inserted == ["Hello world.", "and more."])
+    }
+
+    @Test func readableFieldTextWinsOverHistory() async {
+        let controller = await makeController()
+        await dictate(controller, "Hello world.")
+        controller.textBeforeCursor = { "Dear Sir," }
+        await dictate(controller, "Thanks for writing.")
+        #expect(inserter.inserted.last == " thanks for writing.")
+    }
+
+    @Test func emptyFieldReadingDoesNotOverrideHistory() async {
+        let controller = await makeController()
+        controller.textBeforeCursor = { "" }
+        await dictate(controller, "hello world.")
+        await dictate(controller, "and more.")
+        #expect(inserter.inserted == ["Hello world.", " And more."])
+    }
+
     @Test func emptyTranscriptInsertsNothing() async {
         await transcriber.set(result: " [BLANK_AUDIO] ")
         let controller = await makeController()

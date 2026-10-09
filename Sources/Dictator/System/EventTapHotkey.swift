@@ -40,9 +40,9 @@ final class EventTapHotkey {
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
     var onInterrupt: (() -> Void)?
-    /// Called when a key that isn't part of the shortcut goes down, e.g. the user typed something.
-    /// Carries no key information.
-    var onOtherKeyDown: (() -> Void)?
+    /// Called when the user types a key that isn't part of the shortcut, or clicks outside the menu
+    /// bar, so the text cursor may have moved. Carries no key or position information.
+    var onOtherInput: (() -> Void)?
 
     private(set) var isRegistered = false
     /// The mode of the current tap, or of the last one when unregistered; nil until first registered.
@@ -68,7 +68,7 @@ final class EventTapHotkey {
             CGRequestListenEventAccess()
             throw Failure.inputMonitoringDenied
         }
-        let types: [CGEventType] = [.keyDown, .keyUp, .flagsChanged]
+        let types: [CGEventType] = [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]
         let mask = types.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
         let refcon = Unmanaged.passUnretained(context).toOpaque()
         let callback: CGEventTapCallBack = { _, type, event, refcon in
@@ -121,7 +121,7 @@ final class EventTapHotkey {
         case .action(.pressed): onPress?()
         case .action(.released): onRelease?()
         case .action(.interrupted): onInterrupt?()
-        case .otherKeyDown: onOtherKeyDown?()
+        case .otherInput: onOtherInput?()
         }
     }
 }
@@ -130,7 +130,7 @@ final class EventTapHotkey {
 private final class TapContext: @unchecked Sendable {
     enum Event: Sendable {
         case action(ChordMatcher.Action)
-        case otherKeyDown
+        case otherInput
     }
 
     var deliver: @Sendable (Event) -> Void = { _ in }
@@ -167,6 +167,17 @@ private final class TapContext: @unchecked Sendable {
         }
         // Ignore the text we type ourselves.
         guard event.getIntegerValueField(.eventSourceUnixProcessID) != ownPID else { return false }
+        switch type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            // Clicks in the menu bar (including our own menu) or in our windows don't move the
+            // text cursor; any other click may.
+            if event.getIntegerValueField(.eventTargetUnixProcessID) != ownPID, !Self.isInMenuBar(event.location) {
+                deliver(.otherInput)
+            }
+            return false
+        default:
+            break
+        }
         let code = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
         let keyEvent: KeyEvent
         switch type {
@@ -179,8 +190,17 @@ private final class TapContext: @unchecked Sendable {
         let (actions, swallow) = matcher.handle(keyEvent)
         self.matcher = matcher
         for action in actions { deliver(.action(action)) }
-        if case .down = keyEvent, !swallow, actions.isEmpty { deliver(.otherKeyDown) }
+        if case .down = keyEvent, !swallow, actions.isEmpty { deliver(.otherInput) }
         return swallow
+    }
+
+    /// Whether a point (global, top-left origin) is in the menu bar strip of the display it's on.
+    private static func isInMenuBar(_ point: CGPoint) -> Bool {
+        var display: CGDirectDisplayID = 0
+        var count: UInt32 = 0
+        guard CGGetDisplaysWithPoint(point, 1, &display, &count) == .success, count > 0 else { return false }
+        // Tall enough for menu bars next to a camera notch.
+        return point.y - CGDisplayBounds(display).minY < 44
     }
 }
 

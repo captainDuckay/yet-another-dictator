@@ -9,10 +9,31 @@ struct SettingsView: View {
     @State private var canListen = Permissions.canListenEvents
     @State private var requestedTyping = false
     @State private var requestedListening = false
+    @State private var loginItem = LoginItem.status
+    @State private var loginItemError: String?
 
     var body: some View {
         Form {
             ShortcutSection(model: model)
+
+            Section("General") {
+                Toggle("Open at login", isOn: Binding(
+                    get: { loginItem != .disabled },
+                    set: { enabled in
+                        loginItemError = LoginItem.set(enabled: enabled)
+                        loginItem = LoginItem.status
+                    }
+                ))
+                if loginItem == .needsApproval {
+                    LabeledContent("Allow Dictator in Login Items to finish.") {
+                        Button("Open Login Items…") { LoginItem.openSystemSettings() }
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                if let loginItemError {
+                    Text(loginItemError).foregroundStyle(.red)
+                }
+            }
 
             Section("Permissions") {
                 PermissionRow(title: "Microphone", granted: microphone == .granted) {
@@ -75,6 +96,7 @@ struct SettingsView: View {
         microphone = Permissions.microphone
         canType = Permissions.canPostEvents
         canListen = Permissions.canListenEvents
+        loginItem = LoginItem.status
         model.retryHotkeyIfNeeded()
     }
 }

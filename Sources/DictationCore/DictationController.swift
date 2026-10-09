@@ -73,6 +73,9 @@ public final class DictationController {
     /// Language for the next transcriptions.
     public var language: DictationLanguage = .automatic
 
+    /// Reads the text just before the cursor in the focused field, or returns nil when it can't.
+    /// Used to space and capitalize a dictation to fit; never stored or logged.
+    @ObservationIgnored public var textBeforeCursor: (() -> String?)?
     /// Called after each dictation is typed, with how long it took.
     @ObservationIgnored public var onTiming: ((DictationTiming) -> Void)?
     @ObservationIgnored public var onStateChange: ((DictationState) -> Void)?
@@ -95,6 +98,7 @@ public final class DictationController {
     @ObservationIgnored private var watchdog: Task<Void, Never>?
     /// Identifies the current transcription; bumped on cancel/timeout so a late result is ignored.
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var history = DictationHistory()
 
     public init(
         recorder: any AudioRecording,
@@ -178,6 +182,12 @@ public final class DictationController {
         }
     }
 
+    /// The user typed, clicked or switched apps, so the cursor may have moved since the last
+    /// dictation. Call for any input that isn't the dictation shortcut.
+    public func noteOtherInput() {
+        history.otherInput()
+    }
+
     /// The microphone stopped on its own (device unplugged, audio system error) during recording.
     /// Whatever was captured is dropped, since it may be cut off mid-word.
     public func recordingFailed(_ message: String) {
@@ -194,6 +204,7 @@ public final class DictationController {
         guard state == .ready, let text = undeliveredTranscript else { return }
         do {
             try inserter.insert(text)
+            history.didInsert(text)
             undeliveredTranscript = nil
             lastError = nil
         } catch {
@@ -305,8 +316,16 @@ public final class DictationController {
             return
         }
         guard !text.isEmpty else { return }
+        // The field's own text when it can be read; otherwise our previous dictation, as long as
+        // nothing else was typed since; otherwise unknown, and the text is typed as transcribed.
+        // An empty field reading next to a dictation we just typed means the app reports its text
+        // wrongly (some web views do), so the history is trusted over it.
+        let fieldText = textBeforeCursor?()
+        let preceding = fieldText?.isEmpty == false ? fieldText : (history.lastInserted ?? fieldText)
+        let typed = SmartJoin.adjust(text, after: preceding)
         do {
-            try inserter.insert(text)
+            try inserter.insert(typed)
+            history.didInsert(typed)
             undeliveredTranscript = nil
             onTiming?(DictationTiming(
                 audioSeconds: Double(samples.count) / Self.sampleRate,

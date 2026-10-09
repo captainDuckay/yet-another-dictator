@@ -83,6 +83,14 @@ final class AppModel {
         hotkey.onPress = { controller.hotkeyPressed() }
         hotkey.onRelease = { controller.hotkeyReleased() }
         hotkey.onInterrupt = { controller.cancel() }
+        // Smart spacing: know when the cursor may have moved since the last dictation.
+        hotkey.onOtherInput = { controller.noteOtherInput() }
+        _ = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { controller.noteOtherInput() }
+        }
+        controller.textBeforeCursor = { FocusedText.textBeforeCursor() }
 
         Task {
             // Another copy already running owns the keyboard tap; quit before installing ours.

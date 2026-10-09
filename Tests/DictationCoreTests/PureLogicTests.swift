@@ -309,6 +309,77 @@ struct ChordRecorderTests {
     }
 }
 
+@Suite struct SmartJoinTests {
+    @Test func unknownContextLeavesTextAlone() {
+        #expect(SmartJoin.adjust("Hello there.", after: nil) == "Hello there.")
+    }
+
+    @Test func emptyFieldCapitalizesWithoutSpace() {
+        #expect(SmartJoin.adjust("hello there.", after: "") == "Hello there.")
+    }
+
+    @Test func newSentenceAfterFullStopGetsSpaceAndCapital() {
+        #expect(SmartJoin.adjust("and then.", after: "It works.") == " And then.")
+        #expect(SmartJoin.adjust("Really?", after: "Done!") == " Really?")
+        #expect(SmartJoin.adjust("Yes.", after: "He said \"no.\"") == " Yes.")
+    }
+
+    @Test func midSentenceLowercasesSentenceCapital() {
+        #expect(SmartJoin.adjust("How are you?", after: "Hello,") == " how are you?")
+        #expect(SmartJoin.adjust("Og så videre.", after: "Vi tog toget") == " og så videre.")
+    }
+
+    @Test func midSentenceKeepsIntentionalCapitals() {
+        #expect(SmartJoin.adjust("I think so.", after: "Well,") == " I think so.")
+        #expect(SmartJoin.adjust("I'm here.", after: "Well,") == " I'm here.")
+        #expect(SmartJoin.adjust("NASA said so.", after: "and") == " NASA said so.")
+        #expect(SmartJoin.adjust("iPhone works.", after: "my") == " iPhone works.")
+    }
+
+    @Test func noSpaceAfterExistingWhitespaceOrOpener() {
+        #expect(SmartJoin.adjust("next one.", after: "First one. ") == "Next one.")
+        #expect(SmartJoin.adjust("Like this", after: "(") == "like this")
+    }
+
+    @Test func newLineStartsASentence() {
+        #expect(SmartJoin.adjust("second line.", after: "First line.\n") == "Second line.")
+        #expect(SmartJoin.adjust("second line.", after: "First line\n") == "Second line.")
+    }
+
+    @Test func punctuationAttachesToPreviousWord() {
+        #expect(SmartJoin.adjust(", and more.", after: "This") == ", and more.")
+        #expect(SmartJoin.adjust("?", after: "Really") == "?")
+    }
+
+    @Test func spacesBeforeCursorStillSeeTheSentenceEnd() {
+        #expect(SmartJoin.adjust("next.", after: "Done.  ") == "Next.")
+        #expect(SmartJoin.adjust("Next.", after: "and  ") == "next.")
+    }
+}
+
+@Suite struct DictationHistoryTests {
+    @Test func undoCountsVisibleCharacters() {
+        var history = DictationHistory()
+        history.didInsert(" Hej 👋🏽 café")
+        #expect(history.takeUndo() == 11)
+        #expect(history.takeUndo() == nil)
+    }
+
+    @Test func otherInputPreventsUndo() {
+        var history = DictationHistory()
+        history.didInsert("Hello.")
+        history.otherInput()
+        #expect(history.lastInserted == nil)
+        #expect(history.takeUndo() == nil)
+    }
+}
+
+@Suite struct SmartJoinQuoteTests {
+    @Test func straightQuoteOpensAfterSpace() {
+        #expect(SmartJoin.adjust("Hello", after: "She said \"") == "hello")
+    }
+}
+
 @Suite struct AudioRingBufferTests {
     @Test func keepsEverythingUntilFull() {
         var ring = AudioRingBuffer(capacity: 4)

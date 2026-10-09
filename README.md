@@ -11,7 +11,13 @@ Core ML), bundled inside the app.
   once, a single modifier (e.g. Right ⌥), fn or Caps Lock. A keyboard drawing shows the shortcut
   and lights up keys live while recording.
 
-That's the whole feature set.
+- **Undo Last Dictation** from the menu (or an optional shortcut) removes exactly what was just
+  typed, as long as you haven't typed or clicked since.
+- Consecutive dictations are spaced and capitalised to continue the sentence.
+- **Language:** Automatic, Dansk or English (Settings → Model).
+- Optional: open at login, keep the microphone ready (catches the first word), daily update check.
+
+That's the whole feature set. See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ## Build
 

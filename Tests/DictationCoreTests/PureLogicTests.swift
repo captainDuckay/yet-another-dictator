@@ -78,6 +78,20 @@ struct SpeechActivityTests {
     }
 }
 
+struct DictationLanguageTests {
+    @Test func mapsToWhisperCodes() {
+        #expect(DictationLanguage.automatic.whisperCode == nil)
+        #expect(DictationLanguage.danish.whisperCode == "da")
+        #expect(DictationLanguage.english.whisperCode == "en")
+    }
+
+    @Test func unknownStoredValueFallsBackToAutomatic() {
+        #expect(DictationLanguage(storedValue: nil) == .automatic)
+        #expect(DictationLanguage(storedValue: "klingon") == .automatic)
+        #expect(DictationLanguage(storedValue: "danish") == .danish)
+    }
+}
+
 struct ShortcutTests {
     typealias Key = Shortcut.Key
 

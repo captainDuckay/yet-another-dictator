@@ -14,7 +14,8 @@ public protocol AudioRecording: AnyObject {
 /// Turns 16 kHz mono samples into text. Must work fully offline.
 public protocol Transcribing: Sendable {
     func prepare() async throws
-    func transcribe(_ samples: [Float]) async throws -> String
+    /// `language` is a Whisper language code ("da", "en"), or nil to detect it from the audio.
+    func transcribe(_ samples: [Float], language: String?) async throws -> String
 }
 
 /// Delivers text into whatever field currently has keyboard focus.
@@ -58,6 +59,9 @@ public final class DictationController {
     /// A transcript that could not be typed, kept in memory only so it isn't lost. Replaced by the
     /// next dictation and cleared once typed or discarded.
     public private(set) var undeliveredTranscript: String?
+
+    /// Language for the next transcriptions.
+    public var language: DictationLanguage = .automatic
 
     @ObservationIgnored public var onStateChange: ((DictationState) -> Void)?
     /// Called whenever a new error is reported, e.g. to show it briefly on screen.
@@ -229,7 +233,7 @@ public final class DictationController {
     private func transcribeAndInsert(_ samples: [Float], id: Int) async {
         let outcome: Result<String, any Error>
         do {
-            outcome = .success(try await transcriber.transcribe(samples))
+            outcome = .success(try await transcriber.transcribe(samples, language: language.whisperCode))
         } catch {
             outcome = .failure(error)
         }

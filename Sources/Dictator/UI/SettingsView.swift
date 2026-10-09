@@ -115,6 +115,12 @@ private struct ShortcutSection: View {
                 .frame(maxWidth: .infinity)
             if let error = model.shortcutError {
                 Text(error).foregroundStyle(.red)
+            } else if monitor == nil, let note = passThroughNote {
+                if note.isWarning {
+                    Label(note.text, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                } else {
+                    Text(note.text).foregroundStyle(.secondary)
+                }
             }
             Text("Any key or combination works, including fn, Caps Lock and a single modifier like Right ⌥. Tap to start and stop. Hold to talk, release to finish.")
                 .foregroundStyle(.secondary)
@@ -122,6 +128,19 @@ private struct ShortcutSection: View {
         .onDisappear { stop() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             stop()
+        }
+    }
+
+    /// Only relevant when macOS gave us a listen-only tap, so the shortcut's keys can't be withheld.
+    private var passThroughNote: (text: String, isWarning: Bool)? {
+        guard model.hotkeyMode == .listenOnly else { return nil }
+        let name = model.shortcut.displayString
+        return switch model.shortcut.passThroughEffect {
+        case .harmless: nil
+        case .appShortcut:
+            ("macOS only lets Dictator watch the keyboard, so \(name) also reaches the app you're in.", false)
+        case .typing:
+            ("macOS only lets Dictator watch the keyboard, so \(name) will also type or act in the app you're dictating into. Add ⌃ or ⌘, or use a single modifier like Right ⌥, fn or an F-key.", true)
         }
     }
 

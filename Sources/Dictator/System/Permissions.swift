@@ -2,7 +2,7 @@ import AppKit
 import AVFoundation
 import CoreGraphics
 
-/// The two permissions Dictator needs, and nothing else.
+/// The three permissions Dictator needs, and nothing else.
 @MainActor
 enum Permissions {
     enum Status { case granted, denied, notDetermined }
@@ -25,6 +25,12 @@ enum Permissions {
 
     @discardableResult
     static func requestPostEvents() -> Bool { CGRequestPostEventAccess() }
+
+    /// Seeing key presses from other apps, so any key combination can be the shortcut (Input Monitoring).
+    static var canListenEvents: Bool { CGPreflightListenEventAccess() }
+
+    @discardableResult
+    static func requestListenEvents() -> Bool { CGRequestListenEventAccess() }
 
     static func relaunch() {
         let configuration = NSWorkspace.OpenConfiguration()

@@ -23,6 +23,7 @@ actor FakeTranscriber: Transcribing {
     var result = "hello world"
     var prepareError: (any Error)?
     private(set) var received: [[Float]] = []
+    private(set) var languages: [String?] = []
     /// How long transcription takes; `cooperative` decides whether it stops when cancelled.
     var delay: Duration?
     var cooperative = true
@@ -39,8 +40,9 @@ actor FakeTranscriber: Transcribing {
         if let prepareError { throw prepareError }
     }
 
-    func transcribe(_ samples: [Float]) async throws -> String {
+    func transcribe(_ samples: [Float], language: String?) async throws -> String {
         received.append(samples)
+        languages.append(language)
         if let delay {
             if cooperative {
                 do {
@@ -250,6 +252,20 @@ struct DictationControllerTests {
         #expect(controller.state == .ready)
         #expect(await transcriber.received.isEmpty)
         #expect(inserter.inserted.isEmpty)
+    }
+
+    @Test func passesTheChosenLanguageToTheTranscriber() async {
+        let controller = await makeController()
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+        controller.language = .danish
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+
+        #expect(await transcriber.languages == [nil, "da"])
     }
 
     @Test func emptyTranscriptInsertsNothing() async {

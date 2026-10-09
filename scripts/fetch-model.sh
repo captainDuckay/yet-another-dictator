@@ -35,4 +35,16 @@ while read -r expected remote path; do
     trap - EXIT
 done < "$manifest"
 
+# Remove files that are no longer in the manifest (e.g. models WhisperKit stopped using), so a
+# reused Model/ folder doesn't bundle them.
+expected_paths="$(awk '$1 !~ /^#/ && NF == 3 { print $3 }' "$manifest")"
+while IFS= read -r -d '' file; do
+    relative="${file#"$dest"/}"
+    if ! grep -Fxq -- "$relative" <<< "$expected_paths"; then
+        echo "✗ removing $relative (not in manifest)"
+        rm -f "$file"
+    fi
+done < <(find "$dest" -type f ! -name '.*' -print0)
+find "$dest" -mindepth 1 -type d -empty -delete
+
 echo "✓ Model verified in $dest"

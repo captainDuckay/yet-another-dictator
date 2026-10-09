@@ -137,6 +137,9 @@ public actor WhisperKitTranscriber: Transcribing {
             detectLanguage: true,
             skipSpecialTokens: true,
             withoutTimestamps: true,
+            // A punctuated prompt makes Whisper write complete sentences, including the final
+            // full stop it otherwise often drops on short dictations. See `DictationPrompt`.
+            promptTokens: engine.promptTokens,
             // Whisper's standard quality checks, spelled out so they're deliberate. A window that
             // fails one is decoded again at a higher temperature. noSpeechThreshold has no effect
             // in WhisperKit 1.1.1 (no-speech probability is not computed); silence is instead
@@ -144,10 +147,7 @@ public actor WhisperKitTranscriber: Transcribing {
             compressionRatioThreshold: Self.compressionRatioThreshold,
             logProbThreshold: -1.0,
             firstTokenLogProbThreshold: -1.5,
-            noSpeechThreshold: 0.6,
-            // A punctuated prompt makes Whisper write complete sentences, including the final
-            // full stop it otherwise often drops on short dictations. See `DictationPrompt`.
-            promptTokens: engine.promptTokens
+            noSpeechThreshold: 0.6
         )
         let results = try await engine.whisper.transcribe(
             audioArray: samples,

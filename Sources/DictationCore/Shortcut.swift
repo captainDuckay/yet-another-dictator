@@ -45,6 +45,27 @@ public struct Shortcut: Equatable, Sendable {
         return symbols.joined() + others.map(\.label).joined(separator: "+")
     }
 
+    /// What pressing the shortcut does in the focused app when its keys can't be withheld (the
+    /// hotkey tap is listen-only), so every key also reaches the app.
+    public enum PassThroughEffect: Equatable, Sendable {
+        /// Only modifiers, Caps Lock or F-keys: nothing visible happens.
+        case harmless
+        /// Includes ⌃ or ⌘, so the app may run its own command for the combination.
+        case appShortcut
+        /// Types a character or acts on the text (letters, Space, Return, arrows, ⌫, ⎋…).
+        case typing
+    }
+
+    public var passThroughEffect: PassThroughEffect {
+        let acting = keys.map(\.code).filter {
+            !KeyCode.isModifier($0) && $0 != KeyCode.capsLock && !KeyCode.functionKeys.contains($0)
+        }
+        if acting.isEmpty { return .harmless }
+        let commandLike: Set<UInt16> = [KeyCode.leftControl, KeyCode.leftCommand]
+        if keys.contains(where: { commandLike.contains(KeyCode.leftSide($0.code)) }) { return .appShortcut }
+        return .typing
+    }
+
     public enum ValidationError: Error, Equatable, Sendable {
         case empty
     }

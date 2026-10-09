@@ -65,6 +65,30 @@ struct ShortcutTests {
         #expect(shortcut.displayString == "⌘A+S")
     }
 
+    @Test(arguments: [
+        ([KeyCode.rightOption], Shortcut.PassThroughEffect.harmless),
+        ([KeyCode.function], .harmless),
+        ([KeyCode.capsLock], .harmless),
+        ([0x60], .harmless), // F5
+        ([KeyCode.leftShift, 0x6F], .harmless), // ⇧F12
+        ([KeyCode.leftControl, KeyCode.leftOption, 0x02], .appShortcut), // ⌃⌥D (default)
+        ([KeyCode.rightCommand, 0x31], .appShortcut), // Right ⌘ Space
+        ([0x00], .typing), // A
+        ([0x31], .typing), // Space
+        ([0x35], .typing), // ⎋
+        ([KeyCode.leftOption, 0x02], .typing), // ⌥D types ∂
+        ([KeyCode.leftShift, 0x7E], .typing), // ⇧↑ selects text
+        ([0x00, 0x01], .typing), // A+S
+    ] as [([UInt16], Shortcut.PassThroughEffect)])
+    func passThroughEffect(codes: [UInt16], expected: Shortcut.PassThroughEffect) {
+        let shortcut = Shortcut(keys: codes.map { Key(code: $0, label: "") })
+        #expect(shortcut.passThroughEffect == expected)
+    }
+
+    @Test func defaultShortcutDoesNotType() {
+        #expect(Shortcut.default.passThroughEffect != .typing)
+    }
+
     @Test func anySingleKeyIsValid() throws {
         try Shortcut(keys: [Key(code: 0x60, label: "F5")]).validate()
         try Shortcut(keys: [Key(code: KeyCode.capsLock, label: "⇪")]).validate()

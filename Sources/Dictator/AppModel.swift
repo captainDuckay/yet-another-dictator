@@ -11,12 +11,15 @@ final class AppModel {
     let controller: DictationController
     private(set) var shortcut: Shortcut
     private(set) var shortcutError: String?
+    /// How the shortcut is being watched; nil until the hotkey was registered once.
+    private(set) var hotkeyMode: EventTapHotkey.Mode?
 
     @ObservationIgnored private let hotkey = EventTapHotkey()
     @ObservationIgnored private let overlay: OverlayPanel
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private var isSuspended = false
     private static let shortcutKey = "shortcut"
+    private static let log = Logger(subsystem: "com.captainduckay.dictator", category: "state")
 
     init() {
         let modelFolder = WhisperKitTranscriber.bundledModelFolder()
@@ -30,7 +33,7 @@ final class AppModel {
         self.overlay = OverlayPanel(controller: controller)
         self.shortcut = Self.loadShortcut(from: defaults)
 
-        let log = Logger(subsystem: "com.captainduckay.dictator", category: "state")
+        let log = Self.log
         controller.onStateChange = { [overlay] state in
             // State only — transcripts and audio are never logged.
             log.notice("state: \(String(describing: state), privacy: .public)")
@@ -52,6 +55,7 @@ final class AppModel {
         do {
             try new.validate()
             try hotkey.register(new)
+            noteHotkeyMode()
             shortcut = new
             shortcutError = nil
             defaults.set(try JSONEncoder().encode(new), forKey: Self.shortcutKey)
@@ -74,10 +78,18 @@ final class AppModel {
         isSuspended = false
         do {
             try hotkey.register(shortcut)
+            noteHotkeyMode()
             shortcutError = nil
         } catch {
             shortcutError = String(describing: error)
         }
+    }
+
+    private func noteHotkeyMode() {
+        guard hotkeyMode != hotkey.mode else { return }
+        hotkeyMode = hotkey.mode
+        let mode = hotkey.mode.map { "\($0)" } ?? "none"
+        Self.log.notice("hotkey tap: \(mode, privacy: .public)")
     }
 
     /// Retries registration, e.g. after the user granted Input Monitoring.

@@ -22,6 +22,12 @@ public enum KeyCode {
         (function, 0x0080_0000),
     ]
 
+    /// F1–F20. Bare function keys rarely do anything in the focused app.
+    public static let functionKeys: Set<UInt16> = [
+        0x7A, 0x78, 0x63, 0x76, 0x60, 0x61, 0x62, 0x64, 0x65, 0x6D, 0x67, 0x6F,
+        0x69, 0x6B, 0x71, 0x6A, 0x40, 0x4F, 0x50, 0x5A,
+    ]
+
     /// Modifier keys tracked through flags (everything except Caps Lock).
     public static func isModifier(_ code: UInt16) -> Bool {
         modifierFlagBits.contains { $0.code == code }

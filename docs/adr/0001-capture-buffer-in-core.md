@@ -28,8 +28,8 @@ The AVAudioEngine tap, format conversion and device handling stay in the app
 
 ## Consequences
 
-- The buffer's behaviour is covered by `CaptureBufferTests`, and runs on Linux CI-free checks as
-  well as on the macOS quality gate.
+- The buffer's behaviour is covered by `CaptureBufferTests`, which run anywhere DictationCore
+  builds (including Linux) as well as in the macOS quality gate.
 - DictationCore gains a dependency on the standard `Synchronization` module (no third-party code).
 - Callbacks from the buffer must stay non-blocking; the app hops to the main actor with
   `Task { @MainActor in … }`.

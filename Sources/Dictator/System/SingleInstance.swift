@@ -5,8 +5,12 @@ import AppKit
 @MainActor
 enum SingleInstance {
     private static let relaunchKey = "relaunchRequestedAt"
-    /// How long a relaunch marker stays valid, and how long the new copy waits for the old one.
+    /// How long a relaunch marker stays valid.
     private static let relaunchWindow: TimeInterval = 15
+    /// How long a new copy waits for an earlier one to quit before giving way. Always a little, so
+    /// a relaunch can't end with no copy running even if the marker was missed; longer when the
+    /// marker says a relaunch is in progress.
+    private static let normalWait: Duration = .seconds(2)
     private static let relaunchWait: Duration = .seconds(5)
 
     /// Call just before relaunching: the new copy then waits for this one to quit instead of
@@ -18,7 +22,7 @@ enum SingleInstance {
     /// Returns true if this process should keep running, false if an earlier copy owns the role.
     static func claim() async -> Bool {
         let relaunching = consumeRelaunchMarker()
-        let deadline = ContinuousClock.now + (relaunching ? relaunchWait : .zero)
+        let deadline = ContinuousClock.now + (relaunching ? relaunchWait : normalWait)
         while true {
             if earlierCopies().isEmpty { return true }
             if ContinuousClock.now >= deadline { return false }

@@ -14,6 +14,18 @@ struct MenuContent: View {
         if model.controller.state == .recording {
             Button("Cancel Dictation") { model.controller.cancel() }
         }
+        if let text = model.controller.undeliveredTranscript {
+            Divider()
+            Text("Not typed: “\(Self.preview(text))”")
+            Button("Type It Again") {
+                // Let the menu close so the field you were in has keyboard focus again.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(250))
+                    model.controller.retryUndelivered()
+                }
+            }
+            Button("Discard") { model.controller.discardUndelivered() }
+        }
         Divider()
         Button("Settings…") {
             NSApp.activate()
@@ -22,5 +34,9 @@ struct MenuContent: View {
         .keyboardShortcut(",")
         Button("Quit Dictator") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
+    }
+
+    private static func preview(_ text: String) -> String {
+        text.count <= 60 ? text : String(text.prefix(59)) + "…"
     }
 }

@@ -20,6 +20,9 @@ public protocol Transcribing: Sendable {
 /// Delivers text into whatever field currently has keyboard focus.
 @MainActor
 public protocol TextInserting: AnyObject {
+    /// Throws a user-facing error if `insert` is known to fail (e.g. permission missing), asking
+    /// for the permission if it can. Checked before recording so speech isn't wasted.
+    func preflight() throws
     func insert(_ text: String) throws
 }
 
@@ -49,9 +52,16 @@ public final class DictationController {
     /// Live input loudness while recording, 0...1.
     public private(set) var level: Float = 0
     /// Last non-fatal error (e.g. microphone denied), cleared on the next successful start.
-    public private(set) var lastError: String?
+    public private(set) var lastError: String? {
+        didSet { if let lastError, lastError != oldValue { onError?(lastError) } }
+    }
+    /// A transcript that could not be typed, kept in memory only so it isn't lost. Replaced by the
+    /// next dictation and cleared once typed or discarded.
+    public private(set) var undeliveredTranscript: String?
 
     @ObservationIgnored public var onStateChange: ((DictationState) -> Void)?
+    /// Called whenever a new error is reported, e.g. to show it briefly on screen.
+    @ObservationIgnored public var onError: ((String) -> Void)?
 
     @ObservationIgnored private let recorder: any AudioRecording
     @ObservationIgnored private let transcriber: any Transcribing
@@ -90,6 +100,12 @@ public final class DictationController {
     public func hotkeyPressed() {
         switch state {
         case .ready:
+            do {
+                try inserter.preflight()
+            } catch {
+                report(error)
+                return
+            }
             pressedAt = now()
             startRecording()
         case .recording:
@@ -117,6 +133,32 @@ public final class DictationController {
         state = .ready
     }
 
+    /// Types the undelivered transcript again, e.g. after the user fixed the permission.
+    public func retryUndelivered() {
+        guard state == .ready, let text = undeliveredTranscript else { return }
+        do {
+            try inserter.insert(text)
+            undeliveredTranscript = nil
+            lastError = nil
+        } catch {
+            report(error)
+        }
+    }
+
+    public func discardUndelivered() {
+        undeliveredTranscript = nil
+    }
+
+    private func report(_ error: any Error) {
+        report(error.localizedDescription)
+    }
+
+    private func report(_ message: String) {
+        // Clearing first makes a repeated identical failure notify (and be shown) again.
+        lastError = nil
+        lastError = message
+    }
+
     private func startRecording() {
         do {
             try recorder.start { [weak self] level in
@@ -126,7 +168,7 @@ public final class DictationController {
             state = .recording
         } catch {
             pressedAt = nil
-            lastError = "Could not start microphone: \(error.localizedDescription)"
+            report("Could not start microphone: \(error.localizedDescription)")
         }
     }
 
@@ -143,12 +185,20 @@ public final class DictationController {
 
     private func transcribeAndInsert(_ samples: [Float]) async {
         defer { state = .ready }
+        let text: String
         do {
-            let text = TranscriptCleaner.clean(try await transcriber.transcribe(samples))
-            guard !text.isEmpty else { return }
-            try inserter.insert(text)
+            text = TranscriptCleaner.clean(try await transcriber.transcribe(samples))
         } catch {
-            lastError = error.localizedDescription
+            report(error)
+            return
+        }
+        guard !text.isEmpty else { return }
+        do {
+            try inserter.insert(text)
+            undeliveredTranscript = nil
+        } catch {
+            undeliveredTranscript = text
+            report("\(error.localizedDescription) Your dictation is kept in the menu bar menu.")
         }
     }
 }

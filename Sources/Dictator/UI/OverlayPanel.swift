@@ -7,10 +7,17 @@ import SwiftUI
 @MainActor
 final class OverlayPanel {
     private let panel: NSPanel
+    private let notice = Notice()
+    private var hideNotice: Task<Void, Never>?
+
+    /// A short message shown in place of the listening/transcribing pill.
+    @Observable final class Notice {
+        var text: String?
+    }
 
     init(controller: DictationController) {
         panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 200, height: 44),
+            contentRect: NSRect(x: 0, y: 0, width: OverlayView.width, height: OverlayView.height),
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered,
             defer: true
@@ -22,17 +29,36 @@ final class OverlayPanel {
         panel.hasShadow = true
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
-        panel.contentView = NSHostingView(rootView: OverlayView(controller: controller))
+        panel.contentView = NSHostingView(rootView: OverlayView(controller: controller, notice: notice))
     }
 
     func update(for state: DictationState) {
         switch state {
         case .recording, .transcribing:
-            if !panel.isVisible { position() }
-            panel.orderFrontRegardless()
+            hideNotice?.cancel()
+            notice.text = nil
+            show()
         case .ready, .loadingModel, .unavailable:
+            if notice.text == nil { panel.orderOut(nil) }
+        }
+    }
+
+    /// Shows `message` for a few seconds, e.g. why dictation couldn't start or type.
+    func flash(_ message: String) {
+        notice.text = message
+        show()
+        hideNotice?.cancel()
+        hideNotice = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard let self, !Task.isCancelled else { return }
+            notice.text = nil
             panel.orderOut(nil)
         }
+    }
+
+    private func show() {
+        if !panel.isVisible { position() }
+        panel.orderFrontRegardless()
     }
 
     /// Bottom-centre of the screen the mouse is on.
@@ -46,11 +72,26 @@ final class OverlayPanel {
 }
 
 private struct OverlayView: View {
+    static let width: CGFloat = 360
+    static let height: CGFloat = 84
+
     let controller: DictationController
+    let notice: OverlayPanel.Notice
 
     var body: some View {
+        // The panel is transparent outside the pill; the pill sizes to its content.
+        pill
+            .frame(width: Self.width, height: Self.height, alignment: .bottom)
+    }
+
+    private var pill: some View {
         HStack(spacing: 10) {
-            if controller.state == .transcribing {
+            if let text = notice.text {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+                Text(text)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if controller.state == .transcribing {
                 ProgressView().controlSize(.small)
                 Text("Transcribing")
             } else {
@@ -62,8 +103,9 @@ private struct OverlayView: View {
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(.white)
         .padding(.horizontal, 16)
-        .frame(width: 200, height: 44)
-        .background(.black.opacity(0.8), in: Capsule())
+        .padding(.vertical, 8)
+        .frame(minWidth: 200, maxWidth: Self.width, minHeight: 44)
+        .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 22))
     }
 }
 

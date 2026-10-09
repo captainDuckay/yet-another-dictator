@@ -40,7 +40,17 @@ actor FakeTranscriber: Transcribing {
 @MainActor
 final class FakeInserter: TextInserting {
     private(set) var inserted: [String] = []
-    func insert(_ text: String) throws { inserted.append(text) }
+    var preflightError: (any Error)?
+    var insertError: (any Error)?
+
+    func preflight() throws {
+        if let preflightError { throw preflightError }
+    }
+
+    func insert(_ text: String) throws {
+        if let insertError { throw insertError }
+        inserted.append(text)
+    }
 }
 
 struct Boom: Error {}
@@ -67,8 +77,11 @@ struct DictationControllerTests {
         return controller
     }
 
-    func waitUntilReady(_ controller: DictationController) async {
-        for _ in 0..<1_000 where controller.state != .ready { await Task.yield() }
+    func waitUntilReady(_ controller: DictationController, timeout: Duration = .seconds(2)) async {
+        let deadline = ContinuousClock.now + timeout
+        while controller.state != .ready, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
     }
 
     @Test func loadsModelThenBecomesReady() async {
@@ -157,6 +170,74 @@ struct DictationControllerTests {
 
         #expect(controller.state == .ready)
         #expect(controller.lastError != nil)
+    }
+
+    @Test func refusesToRecordWhenTextCannotBeInserted() async {
+        let controller = await makeController()
+        inserter.preflightError = Boom()
+        var shown: [String] = []
+        controller.onError = { shown.append($0) }
+
+        controller.hotkeyPressed()
+        controller.hotkeyReleased()
+
+        #expect(controller.state == .ready)
+        #expect(!recorder.isRecording)
+        #expect(controller.lastError != nil)
+        #expect(shown.count == 1)
+
+        controller.hotkeyPressed()
+        #expect(shown.count == 2, "a repeated failure is shown again")
+    }
+
+    @Test func failedInsertKeepsTranscriptForRetry() async {
+        let controller = await makeController()
+        inserter.insertError = Boom()
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+
+        #expect(controller.undeliveredTranscript == "hello world")
+        #expect(controller.lastError != nil)
+
+        controller.retryUndelivered()
+        #expect(controller.undeliveredTranscript == "hello world", "still failing, still kept")
+
+        inserter.insertError = nil
+        controller.retryUndelivered()
+        #expect(inserter.inserted == ["hello world"])
+        #expect(controller.undeliveredTranscript == nil)
+        #expect(controller.lastError == nil)
+    }
+
+    @Test func nextSuccessfulDictationReplacesUndeliveredTranscript() async {
+        let controller = await makeController()
+        inserter.insertError = Boom()
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+        #expect(controller.undeliveredTranscript != nil)
+
+        inserter.insertError = nil
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+
+        #expect(controller.undeliveredTranscript == nil)
+        #expect(inserter.inserted == ["hello world"])
+    }
+
+    @Test func discardForgetsUndeliveredTranscript() async {
+        let controller = await makeController()
+        inserter.insertError = Boom()
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+
+        controller.discardUndelivered()
+
+        #expect(controller.undeliveredTranscript == nil)
     }
 
     @Test func hotkeyIgnoredWhileTranscribing() async {

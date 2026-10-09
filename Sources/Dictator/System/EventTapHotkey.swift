@@ -8,6 +8,12 @@ import Foundation
 /// Needs Input Monitoring permission. Events are only matched against the shortcut in memory;
 /// nothing is stored or logged. The shortcut's own non-modifier keys are withheld from other apps
 /// when macOS allows an active tap; otherwise the tap is listen-only and they pass through.
+///
+/// The tap runs on its own high-priority thread, not the main thread. With a tap that can withhold
+/// keys, every keystroke on the Mac waits for our callback, so a busy main thread (starting the
+/// microphone, typing a long dictation, SwiftUI work) would otherwise stall all typing system-wide
+/// and get the tap disabled by macOS. Matching happens on that thread; only the resulting
+/// press/release/interrupt actions hop to the main actor.
 @MainActor
 final class EventTapHotkey {
     enum Failure: Error, CustomStringConvertible {
@@ -34,15 +40,27 @@ final class EventTapHotkey {
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
     var onInterrupt: (() -> Void)?
+    /// Called when a key that isn't part of the shortcut goes down, e.g. the user typed something.
+    /// Carries no key information.
+    var onOtherKeyDown: (() -> Void)?
 
     private(set) var isRegistered = false
     /// The mode of the current tap, or of the last one when unregistered; nil until first registered.
     private(set) var mode: Mode?
-    private var shortcut: Shortcut?
-    private var matcher: ChordMatcher?
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
-    private let ownPID = Int64(ProcessInfo.processInfo.processIdentifier)
+    private let context: TapContext
+    private let thread = TapThread()
+
+    init() {
+        context = TapContext(ownPID: Int64(ProcessInfo.processInfo.processIdentifier))
+        context.deliver = { [weak self] event in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.dispatch(event) }
+            }
+        }
+        thread.start()
+    }
 
     func register(_ shortcut: Shortcut) throws {
         unregister()
@@ -52,13 +70,12 @@ final class EventTapHotkey {
         }
         let types: [CGEventType] = [.keyDown, .keyUp, .flagsChanged]
         let mask = types.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
-        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        let refcon = Unmanaged.passUnretained(context).toOpaque()
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             guard let refcon else { return Unmanaged.passUnretained(event) }
-            let hotkey = Unmanaged<EventTapHotkey>.fromOpaque(refcon).takeUnretainedValue()
-            // The tap's run loop source is on the main run loop.
-            let swallow = MainActor.assumeIsolated { hotkey.handle(type, event) }
-            return swallow ? nil : Unmanaged.passUnretained(event)
+            let context = Unmanaged<TapContext>.fromOpaque(refcon).takeUnretainedValue()
+            // Runs on the tap thread.
+            return context.handle(type, event) ? nil : Unmanaged.passUnretained(event)
         }
         func create(_ options: CGEventTapOptions) -> CFMachPort? {
             CGEvent.tapCreate(
@@ -76,13 +93,14 @@ final class EventTapHotkey {
         } else {
             throw Failure.tapUnavailable
         }
+        context.install(shortcut: shortcut, tap: tap)
         let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        let runLoop = thread.waitForRunLoop()
+        CFRunLoopAddSource(runLoop, source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+        CFRunLoopWakeUp(runLoop)
         self.tap = tap
         self.source = source
-        self.shortcut = shortcut
-        matcher = ChordMatcher(shortcut)
         isRegistered = true
     }
 
@@ -91,16 +109,51 @@ final class EventTapHotkey {
             CGEvent.tapEnable(tap: tap, enable: false)
             CFMachPortInvalidate(tap)
         }
-        if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+        if let source { CFRunLoopRemoveSource(thread.waitForRunLoop(), source, .commonModes) }
+        context.install(shortcut: nil, tap: nil)
         tap = nil
         source = nil
-        matcher = nil
-        shortcut = nil
         isRegistered = false
     }
 
+    private func dispatch(_ event: TapContext.Event) {
+        switch event {
+        case .action(.pressed): onPress?()
+        case .action(.released): onRelease?()
+        case .action(.interrupted): onInterrupt?()
+        case .otherKeyDown: onOtherKeyDown?()
+        }
+    }
+}
+
+/// State used on the tap thread. Guarded by a lock because `install` is called from the main thread.
+private final class TapContext: @unchecked Sendable {
+    enum Event: Sendable {
+        case action(ChordMatcher.Action)
+        case otherKeyDown
+    }
+
+    var deliver: @Sendable (Event) -> Void = { _ in }
+    private let ownPID: Int64
+    private let lock = NSLock()
+    private var shortcut: Shortcut?
+    private var matcher: ChordMatcher?
+    private var tap: CFMachPort?
+
+    init(ownPID: Int64) { self.ownPID = ownPID }
+
+    func install(shortcut: Shortcut?, tap: CFMachPort?) {
+        lock.withLock {
+            self.shortcut = shortcut
+            self.matcher = shortcut.map(ChordMatcher.init)
+            self.tap = tap
+        }
+    }
+
     /// Returns true to withhold the event from other apps.
-    private func handle(_ type: CGEventType, _ event: CGEvent) -> Bool {
+    func handle(_ type: CGEventType, _ event: CGEvent) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             // Keys may have been released while disabled; start tracking afresh.
@@ -125,13 +178,36 @@ final class EventTapHotkey {
         guard var matcher else { return false }
         let (actions, swallow) = matcher.handle(keyEvent)
         self.matcher = matcher
-        for action in actions {
-            switch action {
-            case .pressed: onPress?()
-            case .released: onRelease?()
-            case .interrupted: onInterrupt?()
-            }
-        }
+        for action in actions { deliver(.action(action)) }
+        if case .down = keyEvent, !swallow, actions.isEmpty { deliver(.otherKeyDown) }
         return swallow
+    }
+}
+
+/// A dedicated thread with its own run loop for the event tap.
+private final class TapThread: Thread {
+    private let ready = DispatchSemaphore(value: 0)
+    private var runLoop: CFRunLoop?
+
+    override init() {
+        super.init()
+        name = "Dictator event tap"
+        qualityOfService = .userInteractive
+    }
+
+    override func main() {
+        runLoop = CFRunLoopGetCurrent()
+        // A port keeps the run loop alive while no tap is installed.
+        RunLoop.current.add(NSMachPort(), forMode: .default)
+        ready.signal()
+        while true { RunLoop.current.run(mode: .default, before: .distantFuture) }
+    }
+
+    /// The thread's run loop, waiting briefly for the thread to come up the first time.
+    func waitForRunLoop() -> CFRunLoop {
+        if let runLoop { return runLoop }
+        ready.wait()
+        ready.signal()
+        return runLoop!
     }
 }

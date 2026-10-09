@@ -270,6 +270,7 @@ struct DictationControllerTests {
 
         controller.hotkeyPressed()
         controller.hotkeyPressed()
+        await waitUntilReady(controller)
 
         #expect(controller.state == .ready)
         #expect(await transcriber.received.isEmpty)

@@ -36,6 +36,48 @@ struct TextChunkerTests {
     }
 }
 
+struct SpeechActivityTests {
+    static func tone(amplitude: Float, seconds: Double) -> [Float] {
+        (0..<Int(seconds * 16_000)).map { amplitude * sin(Float($0) * 2 * .pi * 220 / 16_000) }
+    }
+
+    static func silence(seconds: Double, noise: Float = 0) -> [Float] {
+        var seed: UInt32 = 1
+        return (0..<Int(seconds * 16_000)).map { _ in
+            seed = seed &* 1_664_525 &+ 1_013_904_223 // deterministic noise
+            return noise * (Float(seed >> 8) / Float(1 << 24) * 2 - 1)
+        }
+    }
+
+    @Test func digitalSilenceHasNoSpeech() {
+        #expect(!SpeechActivity.containsSpeech(Self.silence(seconds: 2)))
+    }
+
+    @Test func quietRoomNoiseHasNoSpeech() {
+        // Uniform noise at ±0.003 ≈ −55 dBFS RMS.
+        #expect(!SpeechActivity.containsSpeech(Self.silence(seconds: 3, noise: 0.003)))
+    }
+
+    @Test func aKeyClickIsNotSpeech() {
+        let click = Self.silence(seconds: 1, noise: 0.002) + Self.tone(amplitude: 0.5, seconds: 0.05)
+            + Self.silence(seconds: 0.25, noise: 0.002)
+        #expect(!SpeechActivity.containsSpeech(click))
+    }
+
+    @Test func normalSpeechLevelCounts() {
+        #expect(SpeechActivity.containsSpeech(Self.silence(seconds: 0.5) + Self.tone(amplitude: 0.05, seconds: 0.4)))
+    }
+
+    @Test func quietSpeechLevelCounts() {
+        // RMS ≈ 0.0085 (≈ −41 dBFS) for 150 ms, like a short quiet word.
+        #expect(SpeechActivity.containsSpeech(Self.tone(amplitude: 0.012, seconds: 0.15)))
+    }
+
+    @Test func tooShortForAFrameHasNoSpeech() {
+        #expect(!SpeechActivity.containsSpeech(Self.tone(amplitude: 0.5, seconds: 0.01)))
+    }
+}
+
 struct ShortcutTests {
     typealias Key = Shortcut.Key
 

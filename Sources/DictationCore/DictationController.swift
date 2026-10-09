@@ -69,6 +69,7 @@ public final class DictationController {
     @ObservationIgnored private let now: () -> TimeInterval
     @ObservationIgnored private let holdThreshold: TimeInterval
     @ObservationIgnored private let minimumSamples: Int
+    @ObservationIgnored private let containsSpeech: @Sendable ([Float]) -> Bool
     @ObservationIgnored private var pressedAt: TimeInterval?
     @ObservationIgnored private let transcriptionTimeout: @Sendable (_ sampleCount: Int) -> Duration
     @ObservationIgnored private var transcription: Task<Void, Never>?
@@ -83,7 +84,8 @@ public final class DictationController {
         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         holdThreshold: TimeInterval = 0.35,
         minimumDuration: TimeInterval = 0.3,
-        transcriptionTimeout: @escaping @Sendable (_ sampleCount: Int) -> Duration = DictationController.defaultTranscriptionTimeout
+        transcriptionTimeout: @escaping @Sendable (_ sampleCount: Int) -> Duration = DictationController.defaultTranscriptionTimeout,
+        containsSpeech: @escaping @Sendable ([Float]) -> Bool = { SpeechActivity.containsSpeech($0) }
     ) {
         self.recorder = recorder
         self.transcriber = transcriber
@@ -91,6 +93,7 @@ public final class DictationController {
         self.now = now
         self.holdThreshold = holdThreshold
         self.minimumSamples = Int(minimumDuration * Self.sampleRate)
+        self.containsSpeech = containsSpeech
         self.transcriptionTimeout = transcriptionTimeout
     }
 
@@ -195,7 +198,8 @@ public final class DictationController {
     private func finishRecording() {
         let samples = recorder.stop()
         level = 0
-        guard samples.count >= minimumSamples else {
+        // Too short or silent: nothing was said, and Whisper would only invent text.
+        guard samples.count >= minimumSamples, containsSpeech(samples) else {
             state = .ready
             return
         }

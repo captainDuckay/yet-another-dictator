@@ -44,7 +44,7 @@ public enum DictationState: Equatable, Sendable {
 @MainActor
 @Observable
 public final class DictationController {
-    public static let sampleRate: Double = 16_000
+    public nonisolated static let sampleRate: Double = 16_000
 
     public private(set) var state: DictationState = .loadingModel {
         didSet { if state != oldValue { onStateChange?(state) } }
@@ -70,6 +70,11 @@ public final class DictationController {
     @ObservationIgnored private let holdThreshold: TimeInterval
     @ObservationIgnored private let minimumSamples: Int
     @ObservationIgnored private var pressedAt: TimeInterval?
+    @ObservationIgnored private let transcriptionTimeout: @Sendable (_ sampleCount: Int) -> Duration
+    @ObservationIgnored private var transcription: Task<Void, Never>?
+    @ObservationIgnored private var watchdog: Task<Void, Never>?
+    /// Identifies the current transcription; bumped on cancel/timeout so a late result is ignored.
+    @ObservationIgnored private var generation = 0
 
     public init(
         recorder: any AudioRecording,
@@ -77,7 +82,8 @@ public final class DictationController {
         inserter: any TextInserting,
         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         holdThreshold: TimeInterval = 0.35,
-        minimumDuration: TimeInterval = 0.3
+        minimumDuration: TimeInterval = 0.3,
+        transcriptionTimeout: @escaping @Sendable (_ sampleCount: Int) -> Duration = DictationController.defaultTranscriptionTimeout
     ) {
         self.recorder = recorder
         self.transcriber = transcriber
@@ -85,6 +91,13 @@ public final class DictationController {
         self.now = now
         self.holdThreshold = holdThreshold
         self.minimumSamples = Int(minimumDuration * Self.sampleRate)
+        self.transcriptionTimeout = transcriptionTimeout
+    }
+
+    /// 30 s plus the length of the audio: far beyond normal (a few seconds), but bounded, so a stuck
+    /// model can never leave dictation disabled.
+    public nonisolated static func defaultTranscriptionTimeout(sampleCount: Int) -> Duration {
+        .seconds(30) + .seconds(Double(sampleCount) / sampleRate)
     }
 
     public func loadModel() async {
@@ -124,13 +137,20 @@ public final class DictationController {
         }
     }
 
-    /// Stops recording and discards the audio without transcribing.
+    /// Stops recording, or abandons the running transcription, without typing anything.
     public func cancel() {
-        guard state == .recording else { return }
-        pressedAt = nil
-        _ = recorder.stop()
-        level = 0
-        state = .ready
+        switch state {
+        case .recording:
+            pressedAt = nil
+            _ = recorder.stop()
+            level = 0
+            state = .ready
+        case .transcribing:
+            abandonTranscription()
+            state = .ready
+        case .loadingModel, .ready, .unavailable:
+            break
+        }
     }
 
     /// Types the undelivered transcript again, e.g. after the user fixed the permission.
@@ -180,14 +200,44 @@ public final class DictationController {
             return
         }
         state = .transcribing
-        Task { await transcribeAndInsert(samples) }
+        generation += 1
+        let id = generation
+        let timeout = transcriptionTimeout(samples.count)
+        transcription = Task { await transcribeAndInsert(samples, id: id) }
+        watchdog = Task { [weak self] in
+            guard (try? await Task.sleep(for: timeout)) != nil else { return }
+            guard let self, generation == id, state == .transcribing else { return }
+            abandonTranscription()
+            report("Transcription took too long and was stopped. Please try again.")
+            state = .ready
+        }
     }
 
-    private func transcribeAndInsert(_ samples: [Float]) async {
+    /// Cancels the running transcription and makes sure its result, if it still arrives, is dropped.
+    private func abandonTranscription() {
+        generation += 1
+        transcription?.cancel()
+        transcription = nil
+        watchdog?.cancel()
+        watchdog = nil
+    }
+
+    private func transcribeAndInsert(_ samples: [Float], id: Int) async {
+        let outcome: Result<String, any Error>
+        do {
+            outcome = .success(try await transcriber.transcribe(samples))
+        } catch {
+            outcome = .failure(error)
+        }
+        // Cancelled or timed out meanwhile: the user has moved on, so type nothing.
+        guard id == generation else { return }
+        watchdog?.cancel()
+        watchdog = nil
+        transcription = nil
         defer { state = .ready }
         let text: String
         do {
-            text = TranscriptCleaner.clean(try await transcriber.transcribe(samples))
+            text = TranscriptCleaner.clean(try outcome.get())
         } catch {
             report(error)
             return

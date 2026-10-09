@@ -1,5 +1,6 @@
 import DictationCore
 import Foundation
+import Synchronization
 @preconcurrency import WhisperKit
 
 /// Offline transcription using the WhisperKit Large v3 Turbo model bundled inside the app.
@@ -32,8 +33,8 @@ public actor WhisperKitTranscriber: Transcribing {
         }
     }
 
-    /// WhisperKit isn't Sendable. It is only ever used from this actor, and the controller never
-    /// runs two transcriptions at once, so handing it across the load task boundary is safe.
+    /// WhisperKit isn't Sendable. Transcriptions are serialised (see `transcribe`), so it is never
+    /// used by two at once, which makes handing it across task boundaries safe.
     private final class Engine: @unchecked Sendable {
         let whisper: WhisperKit
         init(_ whisper: WhisperKit) { self.whisper = whisper }
@@ -42,6 +43,9 @@ public actor WhisperKitTranscriber: Transcribing {
     private let modelFolder: URL
     private var engine: Engine?
     private var loading: Task<Engine, any Error>?
+    /// The latest transcription. A new one waits for it: the controller may abandon a transcription
+    /// (cancel/timeout) and start another before the old one has wound down.
+    private var latest: Task<Void, Never>?
 
     public init(modelFolder: URL) {
         self.modelFolder = modelFolder
@@ -87,6 +91,30 @@ public actor WhisperKitTranscriber: Transcribing {
         try await prepare()
         guard let engine else { throw Failure.notLoaded }
 
+        let previous = latest
+        let stop = StopFlag()
+        let work = Task {
+            await previous?.value
+            try Task.checkCancellation()
+            return try await Self.run(engine, samples, stop: stop)
+        }
+        latest = Task { _ = await work.result }
+        return try await withTaskCancellationHandler {
+            try await work.value
+        } onCancel: {
+            stop.set()
+            work.cancel()
+        }
+    }
+
+    /// Set when the caller gives up; WhisperKit checks it after every decoded token.
+    private final class StopFlag: Sendable {
+        private let stopped = Mutex(false)
+        func set() { stopped.withLock { $0 = true } }
+        var isSet: Bool { stopped.withLock { $0 } }
+    }
+
+    private static func run(_ engine: Engine, _ samples: [Float], stop: StopFlag) async throws -> String {
         let options = DecodingOptions(
             verbose: false,
             task: .transcribe,
@@ -96,7 +124,13 @@ public actor WhisperKitTranscriber: Transcribing {
             skipSpecialTokens: true,
             withoutTimestamps: true
         )
-        let results = try await engine.whisper.transcribe(audioArray: samples, decodeOptions: options)
+        let results = try await engine.whisper.transcribe(
+            audioArray: samples,
+            decodeOptions: options,
+            // Returning false ends decoding early; nil means carry on.
+            callback: { _ in stop.isSet ? false : nil }
+        )
+        try Task.checkCancellation()
         return results.map(\.text).joined(separator: " ")
     }
 }

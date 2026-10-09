@@ -11,7 +11,7 @@ struct MenuContent: View {
         if let error = model.controller.lastError {
             Text(error)
         }
-        if model.controller.state == .recording {
+        if model.controller.state == .recording || model.controller.state == .transcribing {
             Button("Cancel Dictation") { model.controller.cancel() }
         }
         if let text = model.controller.undeliveredTranscript {

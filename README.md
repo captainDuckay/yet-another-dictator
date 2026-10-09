@@ -36,6 +36,16 @@ swift test
 `WhisperTranscriptionTests` runs a real end-to-end transcription (speech synthesised with `say`)
 when `Model/` exists; run `scripts/fetch-model.sh` first.
 
+## CI / Release
+
+- **Quality gate** (`.github/workflows/quality-gate.yml`): every push to any branch resolves
+  dependencies against `Package.resolved`, builds release, and runs `swift test` (the model-based
+  end-to-end test is skipped).
+- **Release** (`.github/workflows/release.yml`): publishing a GitHub release builds
+  `Dictator.app` (version taken from the tag, `v` prefix stripped) and attaches
+  `Dictator-<tag>-macos-arm64.zip` plus its `.sha256`. Builds are ad-hoc signed and not notarised,
+  so users must right-click → Open (or remove quarantine) on first launch.
+
 ## Architecture
 
 ```mermaid

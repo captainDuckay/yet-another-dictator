@@ -77,6 +77,12 @@ final class FakeInserter: TextInserting {
         if let insertError { throw insertError }
         inserted.append(text)
     }
+
+    private(set) var deleted: [Int] = []
+    func deleteBackward(_ count: Int) throws {
+        if let insertError { throw insertError }
+        deleted.append(count)
+    }
 }
 
 struct Boom: Error {}
@@ -388,6 +394,40 @@ struct DictationControllerTests {
         await waitUntilReady(controller)
 
         #expect(timings.isEmpty)
+    }
+
+    @Test func undoDeletesExactlyWhatWasTyped() async {
+        let controller = await makeController()
+        await dictate(controller, "Hello world.")
+        await dictate(controller, "and more 👋🏽.")
+        #expect(controller.canUndo)
+
+        controller.undoLastDictation()
+
+        #expect(inserter.deleted == [" And more 👋🏽.".count])
+        #expect(inserter.deleted == [12]) // the emoji with skin tone is one character
+        #expect(!controller.canUndo)
+        controller.undoLastDictation() // only once
+        #expect(inserter.deleted.count == 1)
+    }
+
+    @Test func undoIsUnavailableAfterOtherInput() async {
+        let controller = await makeController()
+        await dictate(controller, "Hello world.")
+        controller.noteOtherInput()
+        #expect(!controller.canUndo)
+        controller.undoLastDictation()
+        #expect(inserter.deleted.isEmpty)
+    }
+
+    @Test func undoIsUnavailableBeforeAnyDictationAndWhileRecording() async {
+        let controller = await makeController()
+        #expect(!controller.canUndo)
+        await dictate(controller, "Hello.")
+        controller.hotkeyPressed()
+        #expect(!controller.canUndo)
+        controller.undoLastDictation()
+        #expect(inserter.deleted.isEmpty)
     }
 
     @Test func emptyTranscriptInsertsNothing() async {

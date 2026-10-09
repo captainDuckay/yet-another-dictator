@@ -10,6 +10,9 @@ import WhisperTranscription
 final class AppModel {
     let controller: DictationController
     private(set) var shortcut: Shortcut
+    /// Optional global shortcut for "Undo Last Dictation".
+    private(set) var undoShortcut: Shortcut?
+    private(set) var undoShortcutError: String?
     private(set) var shortcutError: String?
     /// How the shortcut is being watched; nil until the hotkey was registered once.
     private(set) var hotkeyMode: EventTapHotkey.Mode?
@@ -37,6 +40,7 @@ final class AppModel {
     @ObservationIgnored private let overlay: OverlayPanel
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private var isSuspended = false
+    @ObservationIgnored private var isMenuOpen = false
     /// False until this copy is confirmed to be the only one running.
     @ObservationIgnored private var isStarted = false
     private static let shortcutKey = "shortcut"
@@ -45,6 +49,7 @@ final class AppModel {
     private static let lastUpdateCheckKey = "lastUpdateCheck"
     private static let notifiedUpdateKey = "notifiedUpdateVersion"
     private static let keepsMicrophoneReadyKey = "keepMicrophoneReady"
+    private static let undoShortcutKey = "undoShortcut"
     private static let languageKey = "language"
     private static let log = Logger(subsystem: "com.captainduckay.dictator", category: "state")
 
@@ -63,6 +68,7 @@ final class AppModel {
         self.shortcut = Self.loadShortcut(from: defaults)
         self.checksForUpdates = defaults.object(forKey: Self.checksForUpdatesKey) as? Bool ?? true
         self.keepsMicrophoneReady = defaults.bool(forKey: Self.keepsMicrophoneReadyKey)
+        self.undoShortcut = Self.loadShortcut(from: defaults, key: Self.undoShortcutKey)
         controller.language = DictationLanguage(storedValue: defaults.string(forKey: Self.languageKey))
 
         let log = Self.log
@@ -84,7 +90,18 @@ final class AppModel {
         hotkey.onRelease = { controller.hotkeyReleased() }
         hotkey.onInterrupt = { controller.cancel() }
         // Smart spacing: know when the cursor may have moved since the last dictation.
-        hotkey.onOtherInput = { controller.noteOtherInput() }
+        hotkey.onUndo = { controller.undoLastDictation() }
+        // Clicks and arrow keys inside our own menu don't move the text cursor.
+        hotkey.onOtherInput = { [weak self] in
+            if self?.isMenuOpen != true { controller.noteOtherInput() }
+        }
+        let center = NotificationCenter.default
+        _ = center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.isMenuOpen = true }
+        }
+        _ = center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.isMenuOpen = false }
+        }
         _ = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { _ in
@@ -190,7 +207,9 @@ final class AppModel {
         isSuspended = false
         do {
             try new.validate()
-            try hotkey.register(new)
+            // A dictation shortcut that takes over the undo shortcut's keys removes the undo one.
+            if new.codes == undoShortcut?.codes { clearUndoShortcut() }
+            try hotkey.register(new, undo: undoShortcut)
             noteHotkeyMode()
             shortcut = new
             shortcutError = nil
@@ -202,6 +221,27 @@ final class AppModel {
             shortcutError = String(describing: error)
             resumeHotkey()
         }
+    }
+
+    func setUndoShortcut(_ new: Shortcut) {
+        isSuspended = false
+        if new.keys.isEmpty {
+            undoShortcutError = "Press at least one key."
+        } else if new.codes == shortcut.codes {
+            undoShortcutError = "That's the dictation shortcut."
+        } else {
+            undoShortcut = new
+            undoShortcutError = nil
+            if let data = try? JSONEncoder().encode(new) { defaults.set(data, forKey: Self.undoShortcutKey) }
+        }
+        resumeHotkey()
+    }
+
+    func clearUndoShortcut() {
+        undoShortcut = nil
+        undoShortcutError = nil
+        defaults.removeObject(forKey: Self.undoShortcutKey)
+        if hotkey.isRegistered { resumeHotkey() }
     }
 
     var language: DictationLanguage {
@@ -221,7 +261,7 @@ final class AppModel {
     func resumeHotkey() {
         isSuspended = false
         do {
-            try hotkey.register(shortcut)
+            try hotkey.register(shortcut, undo: undoShortcut)
             noteHotkeyMode()
             shortcutError = nil
         } catch {
@@ -242,11 +282,15 @@ final class AppModel {
     }
 
     private static func loadShortcut(from defaults: UserDefaults) -> Shortcut {
+        loadShortcut(from: defaults, key: shortcutKey) ?? .default
+    }
+
+    private static func loadShortcut(from defaults: UserDefaults, key: String) -> Shortcut? {
         guard
-            let data = defaults.data(forKey: shortcutKey),
+            let data = defaults.data(forKey: key),
             let stored = try? JSONDecoder().decode(Shortcut.self, from: data),
             (try? stored.validate()) != nil
-        else { return .default }
+        else { return nil }
         return stored
     }
 }

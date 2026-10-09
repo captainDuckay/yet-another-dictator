@@ -25,6 +25,8 @@ public protocol TextInserting: AnyObject {
     /// for the permission if it can. Checked before recording so speech isn't wasted.
     func preflight() throws
     func insert(_ text: String) throws
+    /// Deletes `count` characters before the cursor, as if Delete was pressed `count` times.
+    func deleteBackward(_ count: Int) throws
 }
 
 // MARK: - State machine
@@ -98,7 +100,10 @@ public final class DictationController {
     @ObservationIgnored private var watchdog: Task<Void, Never>?
     /// Identifies the current transcription; bumped on cancel/timeout so a late result is ignored.
     @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var history = DictationHistory()
+    private var history = DictationHistory()
+
+    /// Whether the last dictation can still be undone: nothing was typed, clicked or switched since.
+    public var canUndo: Bool { state == .ready && history.lastInserted != nil }
 
     public init(
         recorder: any AudioRecording,
@@ -197,6 +202,16 @@ public final class DictationController {
         level = 0
         state = .ready
         report(message)
+    }
+
+    /// Deletes exactly the characters the last dictation typed, if nothing else happened since.
+    public func undoLastDictation() {
+        guard state == .ready, let count = history.takeUndo() else { return }
+        do {
+            try inserter.deleteBackward(count)
+        } catch {
+            report(error)
+        }
     }
 
     /// Types the undelivered transcript again, e.g. after the user fixed the permission.

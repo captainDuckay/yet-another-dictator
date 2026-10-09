@@ -85,6 +85,9 @@ public final class DictationController {
     @ObservationIgnored private let now: () -> TimeInterval
     @ObservationIgnored private let holdThreshold: TimeInterval
     @ObservationIgnored private let minimumSamples: Int
+    @ObservationIgnored private let stopTail: Duration
+    /// True while the microphone is still open for the stop tail.
+    @ObservationIgnored private var isInStopTail = false
     @ObservationIgnored private let containsSpeech: @Sendable ([Float]) -> Bool
     @ObservationIgnored private var pressedAt: TimeInterval?
     @ObservationIgnored private let transcriptionTimeout: @Sendable (_ sampleCount: Int) -> Duration
@@ -100,6 +103,7 @@ public final class DictationController {
         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         holdThreshold: TimeInterval = 0.35,
         minimumDuration: TimeInterval = 0.3,
+        stopTail: Duration = .milliseconds(250),
         transcriptionTimeout: @escaping @Sendable (_ sampleCount: Int) -> Duration = DictationController.defaultTranscriptionTimeout,
         containsSpeech: @escaping @Sendable ([Float]) -> Bool = { SpeechActivity.containsSpeech($0) }
     ) {
@@ -109,6 +113,7 @@ public final class DictationController {
         self.now = now
         self.holdThreshold = holdThreshold
         self.minimumSamples = Int(minimumDuration * Self.sampleRate)
+        self.stopTail = stopTail
         self.containsSpeech = containsSpeech
         self.transcriptionTimeout = transcriptionTimeout
     }
@@ -165,6 +170,7 @@ public final class DictationController {
             level = 0
             state = .ready
         case .transcribing:
+            closeStopTail()
             abandonTranscription()
             state = .ready
         case .loadingModel, .ready, .unavailable:
@@ -224,18 +230,38 @@ public final class DictationController {
 
     private func finishRecording() {
         let stoppedAt = now()
-        let samples = recorder.stop()
-        level = 0
-        // Too short or silent: nothing was said, and Whisper would only invent text.
-        guard samples.count >= minimumSamples, containsSpeech(samples) else {
-            state = .ready
-            return
-        }
         state = .transcribing
         generation += 1
         let id = generation
+        isInStopTail = true
+        transcription = Task { await finishAndTranscribe(id: id, stoppedAt: stoppedAt) }
+    }
+
+    /// Closes the microphone if it's still open for the stop tail, returning what it recorded.
+    @discardableResult
+    private func closeStopTail() -> [Float] {
+        guard isInStopTail else { return [] }
+        isInStopTail = false
+        level = 0
+        return recorder.stop()
+    }
+
+    /// Keeps the microphone open for `stopTail` after the user stops. People release the shortcut
+    /// on (not after) their last syllable, and the newest audio buffer is still in flight; cutting
+    /// there clips the last word, which also makes Whisper treat the sentence as unfinished and
+    /// drop its closing punctuation.
+    private func finishAndTranscribe(id: Int, stoppedAt: TimeInterval) async {
+        if stopTail > .zero { try? await Task.sleep(for: stopTail) }
+        // Cancelled during the tail: cancel() already closed the mic; leave without typing.
+        guard id == generation else { return }
+        let samples = closeStopTail()
+        // Too short or silent: nothing was said, and Whisper would only invent text.
+        guard samples.count >= minimumSamples, containsSpeech(samples) else {
+            transcription = nil
+            state = .ready
+            return
+        }
         let timeout = transcriptionTimeout(samples.count)
-        transcription = Task { await transcribeAndInsert(samples, id: id, stoppedAt: stoppedAt) }
         watchdog = Task { [weak self] in
             guard (try? await Task.sleep(for: timeout)) != nil else { return }
             guard let self, generation == id, state == .transcribing else { return }
@@ -243,6 +269,7 @@ public final class DictationController {
             report("Transcription took too long and was stopped. Please try again.")
             state = .ready
         }
+        await transcribeAndInsert(samples, id: id, stoppedAt: stoppedAt)
     }
 
     /// Cancels the running transcription and makes sure its result, if it still arrives, is dropped.

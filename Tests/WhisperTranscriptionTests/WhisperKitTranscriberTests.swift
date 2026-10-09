@@ -1,4 +1,5 @@
 import AVFoundation
+import DictationCore
 import Foundation
 import Testing
 import WhisperTranscription
@@ -23,6 +24,29 @@ struct WhisperKitTranscriberTests {
         let normalised = text.lowercased()
         #expect(normalised.contains("quick brown fox"), "got: \(text)")
         #expect(normalised.contains("lazy dog"), "got: \(text)")
+    }
+
+    /// Short single sentences are where Whisper used to drop the closing punctuation.
+    @Test(.enabled(if: modelAvailable), .timeLimit(.minutes(10)), arguments: [
+        "Please send me the report tomorrow",
+        "Can you call me back later",
+    ])
+    func shortSentenceEndsWithPunctuation(_ sentence: String) async throws {
+        let transcriber = WhisperKitTranscriber(modelFolder: Self.modelFolder)
+
+        let text = TranscriptCleaner.clean(try await transcriber.transcribe(try Self.speak(sentence), language: nil))
+
+        #expect(text.last.map { ".?!".contains($0) } == true, "got: \(text)")
+    }
+
+    @Test(.enabled(if: modelAvailable), .timeLimit(.minutes(10)))
+    func silenceDoesNotEchoThePrompt() async throws {
+        let transcriber = WhisperKitTranscriber(modelFolder: Self.modelFolder)
+
+        let text = try await transcriber.transcribe(Array(repeating: 0, count: 32_000), language: nil)
+
+        #expect(!text.contains("hvordan går det"), "got: \(text)")
+        #expect(!text.contains("how are you"), "got: \(text)")
     }
 
     @Test func refusesToLoadIncompleteModelFolder() async throws {

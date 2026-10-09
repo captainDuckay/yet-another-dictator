@@ -28,6 +28,6 @@ let package = Package(
         ),
 
         .testTarget(name: "DictationCoreTests", dependencies: ["DictationCore"]),
-        .testTarget(name: "WhisperTranscriptionTests", dependencies: ["WhisperTranscription"]),
+        .testTarget(name: "WhisperTranscriptionTests", dependencies: ["DictationCore", "WhisperTranscription"]),
     ]
 )

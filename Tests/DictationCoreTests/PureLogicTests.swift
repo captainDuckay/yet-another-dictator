@@ -78,6 +78,38 @@ struct SpeechActivityTests {
     }
 }
 
+struct DictationPromptTests {
+    @Test func promptIsPunctuatedInBothLanguages() {
+        let prompt = DictationPrompt.text
+        #expect(prompt.contains("?") && prompt.contains("."))
+        #expect(prompt.contains("tak") && prompt.contains("thanks"))
+        #expect(prompt.last == ".")
+    }
+
+    @Test(arguments: [
+        DictationPrompt.text,
+        "Hej, hvordan går det? Det går godt, tak. Hello, how are you?",
+        "hello how are you i'm fine thanks",
+        " Det går godt, tak. Hello, how are you? I'm fine, thanks. ",
+    ])
+    func detectsPromptEcho(_ transcript: String) {
+        #expect(DictationPrompt.isEcho(transcript))
+    }
+
+    @Test(arguments: [
+        "",
+        "Tak.",
+        "Hello, how are you?",
+        "Det går godt, tak.",
+        "Hello, how are you? I'm fine, thanks. And you?",
+        "Please send the report by Friday.",
+        "Hej, hvordan går det med projektet i dag? Det går godt nu.",
+    ])
+    func keepsRealDictation(_ transcript: String) {
+        #expect(!DictationPrompt.isEcho(transcript))
+    }
+}
+
 struct DictationLanguageTests {
     @Test func mapsToWhisperCodes() {
         #expect(DictationLanguage.automatic.whisperCode == nil)

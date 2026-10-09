@@ -35,6 +35,7 @@ enum Permissions {
     static func relaunch() {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
+        SingleInstance.markRelaunch()
         NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
             guard error == nil else { return }
             Task { @MainActor in NSApp.terminate(nil) }

@@ -43,6 +43,10 @@ final class AppModel {
             log.notice("state: \(String(describing: state), privacy: .public)")
             overlay.update(for: state)
         }
+        controller.onTiming = { timing in
+            // Durations only; never text or audio.
+            log.notice("dictation: \(timing.audioSeconds, format: .fixed(precision: 1), privacy: .public) s audio, release→typed \(timing.releaseToTypedSeconds, format: .fixed(precision: 2), privacy: .public) s, transcription \(timing.transcriptionSeconds, format: .fixed(precision: 2), privacy: .public) s")
+        }
         controller.onError = { [overlay] message in overlay.flash(message) }
         hotkey.onPress = { controller.hotkeyPressed() }
         hotkey.onRelease = { controller.hotkeyReleased() }

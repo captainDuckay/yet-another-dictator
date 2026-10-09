@@ -12,9 +12,10 @@ final class AppModel {
     private(set) var shortcut: Shortcut
     private(set) var shortcutError: String?
 
-    @ObservationIgnored private let hotkey = CarbonHotkey()
+    @ObservationIgnored private let hotkey = EventTapHotkey()
     @ObservationIgnored private let overlay: OverlayPanel
     @ObservationIgnored private let defaults = UserDefaults.standard
+    @ObservationIgnored private var isSuspended = false
     private static let shortcutKey = "shortcut"
 
     init() {
@@ -37,6 +38,7 @@ final class AppModel {
         }
         hotkey.onPress = { controller.hotkeyPressed() }
         hotkey.onRelease = { controller.hotkeyReleased() }
+        hotkey.onInterrupt = { controller.cancel() }
         resumeHotkey()
 
         Task { await controller.loadModel() }
@@ -46,14 +48,15 @@ final class AppModel {
     }
 
     func setShortcut(_ new: Shortcut) {
+        isSuspended = false
         do {
             try new.validate()
             try hotkey.register(new)
             shortcut = new
             shortcutError = nil
             defaults.set(try JSONEncoder().encode(new), forKey: Self.shortcutKey)
-        } catch Shortcut.ValidationError.needsCommandOrControl {
-            shortcutError = "Include ⌘ or ⌃ in the shortcut."
+        } catch Shortcut.ValidationError.empty {
+            shortcutError = "Press at least one key."
             resumeHotkey()
         } catch {
             shortcutError = String(describing: error)
@@ -62,14 +65,24 @@ final class AppModel {
     }
 
     /// Unregisters the global shortcut while the user records a new one.
-    func suspendHotkey() { hotkey.unregister() }
+    func suspendHotkey() {
+        isSuspended = true
+        hotkey.unregister()
+    }
 
     func resumeHotkey() {
+        isSuspended = false
         do {
             try hotkey.register(shortcut)
+            shortcutError = nil
         } catch {
             shortcutError = String(describing: error)
         }
+    }
+
+    /// Retries registration, e.g. after the user granted Input Monitoring.
+    func retryHotkeyIfNeeded() {
+        if !hotkey.isRegistered, !isSuspended { resumeHotkey() }
     }
 
     private static func loadShortcut(from defaults: UserDefaults) -> Shortcut {

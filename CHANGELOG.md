@@ -4,7 +4,12 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-09
+
 ### Added
+- Undo Last Dictation: from the menu, or with an optional shortcut set in Settings. Removes exactly what was just typed, as long as you haven't typed or clicked since.
+- Smart spacing and capitals: dictations continue the sentence with the right space and capitalisation.
+- Update check: once a day Dictator asks GitHub whether a newer version exists and offers the download page. Nothing is downloaded automatically, and you can turn it off in Settings.
 - What's New window, shown once after an update; reopen it from the menu.
 - Choose the dictation language: Automatic, Dansk or English.
 - Open at login.

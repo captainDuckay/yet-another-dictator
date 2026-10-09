@@ -6,20 +6,13 @@ struct SettingsView: View {
     let model: AppModel
     @State private var microphone = Permissions.microphone
     @State private var canType = Permissions.canPostEvents
+    @State private var canListen = Permissions.canListenEvents
     @State private var requestedTyping = false
+    @State private var requestedListening = false
 
     var body: some View {
         Form {
-            Section("Shortcut") {
-                LabeledContent("Dictate") {
-                    ShortcutRecorder(model: model)
-                }
-                if let error = model.shortcutError {
-                    Text(error).foregroundStyle(.red)
-                }
-                Text("Tap to start and stop. Hold to talk, release to finish.")
-                    .foregroundStyle(.secondary)
-            }
+            ShortcutSection(model: model)
 
             Section("Permissions") {
                 PermissionRow(title: "Microphone", granted: microphone == .granted) {
@@ -28,6 +21,16 @@ struct SettingsView: View {
                         else { Permissions.openPrivacySettings("Privacy_Microphone") }
                         refresh()
                     }
+                }
+                PermissionRow(
+                    title: "Input Monitoring (detect shortcut)",
+                    granted: canListen,
+                    actionTitle: requestedListening ? "Relaunch" : "Grant…"
+                ) {
+                    if requestedListening { return Permissions.relaunch() }
+                    if !Permissions.requestListenEvents() { Permissions.openPrivacySettings("Privacy_ListenEvent") }
+                    requestedListening = true
+                    refresh()
                 }
                 PermissionRow(
                     title: "Accessibility (type into fields)",
@@ -39,7 +42,7 @@ struct SettingsView: View {
                     requestedTyping = true
                     refresh()
                 }
-                if requestedTyping && !canType {
+                if (requestedListening && !canListen) || (requestedTyping && !canType) {
                     Text("After enabling Dictator in System Settings, relaunch to apply.")
                         .foregroundStyle(.secondary)
                 }
@@ -54,9 +57,15 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize()
+        // Show in the Dock and ⌘Tab while Settings is open so the window can be found again.
+        .onAppear {
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate()
+        }
+        .onDisappear { NSApp.setActivationPolicy(.accessory) }
         // Poll: toggling a permission in System Settings posts no notification, and a menu bar
         // app does not reliably become active again when the user returns to this window.
-        // (Accessibility is cached per process, so only the microphone updates live.)
+        // (Accessibility and Input Monitoring may be cached per process until a relaunch.)
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             refresh()
         }
@@ -65,6 +74,8 @@ struct SettingsView: View {
     private func refresh() {
         microphone = Permissions.microphone
         canType = Permissions.canPostEvents
+        canListen = Permissions.canListenEvents
+        model.retryHotkeyIfNeeded()
     }
 }
 
@@ -85,51 +96,67 @@ private struct PermissionRow: View {
     }
 }
 
-/// Click, then press the new key combination. Esc cancels.
-private struct ShortcutRecorder: View {
+/// Shows the shortcut on a keyboard. Click the button, then hold any keys and let go to record;
+/// the keyboard lights up the keys as they are pressed.
+private struct ShortcutSection: View {
     let model: AppModel
     @State private var monitor: Any?
+    @State private var recorder = ChordRecorder()
 
     var body: some View {
-        Button(monitor == nil ? model.shortcut.displayString : "Press shortcut…") {
-            monitor == nil ? start() : stop()
+        Section("Shortcut") {
+            LabeledContent("Dictate") {
+                Button(monitor == nil ? model.shortcut.displayString : "Press keys… (click to cancel)") {
+                    monitor == nil ? start() : stop()
+                }
+                .monospaced()
+            }
+            KeyboardView(highlighted: monitor == nil ? model.shortcut.codes : recorder.held)
+                .frame(maxWidth: .infinity)
+            if let error = model.shortcutError {
+                Text(error).foregroundStyle(.red)
+            }
+            Text("Any key or combination works, including fn, Caps Lock and a single modifier like Right ⌥. Tap to start and stop. Hold to talk, release to finish.")
+                .foregroundStyle(.secondary)
         }
-        .monospaced()
         .onDisappear { stop() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            stop()
+        }
     }
 
     private func start() {
         model.suspendHotkey()
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let modifiers = Shortcut.Modifiers(event.modifierFlags)
-            if event.keyCode == 0x35, modifiers.isEmpty {
-                stop()
-                return nil
+        recorder = ChordRecorder()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { event in
+            guard let keyEvent = KeyEvent(event) else { return event }
+            if let codes = recorder.apply(keyEvent) {
+                let keys = codes.map {
+                    Shortcut.Key(code: $0, label: KeyLabels.label(forKeyCode: $0, typed: KeyboardLayout.character(for: $0)))
+                }
+                model.setShortcut(Shortcut(keys: keys))
+                stop(resume: false)
             }
-            let keyCode = UInt32(event.keyCode)
-            model.setShortcut(Shortcut(
-                keyCode: keyCode,
-                modifiers: modifiers,
-                keyLabel: KeyLabels.label(forKeyCode: keyCode, typed: event.charactersIgnoringModifiers)
-            ))
-            stop(resume: false)
             return nil
         }
     }
 
     private func stop(resume: Bool = true) {
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        monitor = nil
+        guard let monitor else { return }
+        NSEvent.removeMonitor(monitor)
+        self.monitor = nil
+        recorder = ChordRecorder()
         if resume { model.resumeHotkey() }
     }
 }
 
-private extension Shortcut.Modifiers {
-    init(_ flags: NSEvent.ModifierFlags) {
-        self = []
-        if flags.contains(.control) { insert(.control) }
-        if flags.contains(.option) { insert(.option) }
-        if flags.contains(.shift) { insert(.shift) }
-        if flags.contains(.command) { insert(.command) }
+private extension KeyEvent {
+    init?(_ event: NSEvent) {
+        switch event.type {
+        case .keyDown: self = .down(event.keyCode)
+        case .keyUp: self = .up(event.keyCode)
+        case .flagsChanged: self = .flagsChanged(event.keyCode, flags: UInt64(event.modifierFlags.rawValue))
+        default: return nil
+        }
     }
 }

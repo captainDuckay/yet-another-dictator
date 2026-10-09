@@ -29,6 +29,16 @@ public protocol TextInserting: AnyObject {
 
 // MARK: - State machine
 
+/// How long one dictation took, for latency logging. Contains no text or audio.
+public struct DictationTiming: Equatable, Sendable {
+    /// Length of the recorded audio.
+    public var audioSeconds: Double
+    /// From the moment the user stopped (key release or second tap) to the text being typed.
+    public var releaseToTypedSeconds: Double
+    /// Time spent in the transcriber alone.
+    public var transcriptionSeconds: Double
+}
+
 public enum DictationState: Equatable, Sendable {
     case loadingModel
     case ready
@@ -66,6 +76,8 @@ public final class DictationController {
     /// Reads the text just before the cursor in the focused field, or returns nil when it can't.
     /// Used to space and capitalize a dictation to fit; never stored or logged.
     @ObservationIgnored public var textBeforeCursor: (() -> String?)?
+    /// Called after each dictation is typed, with how long it took.
+    @ObservationIgnored public var onTiming: ((DictationTiming) -> Void)?
     @ObservationIgnored public var onStateChange: ((DictationState) -> Void)?
     /// Called whenever a new error is reported, e.g. to show it briefly on screen.
     @ObservationIgnored public var onError: ((String) -> Void)?
@@ -76,6 +88,9 @@ public final class DictationController {
     @ObservationIgnored private let now: () -> TimeInterval
     @ObservationIgnored private let holdThreshold: TimeInterval
     @ObservationIgnored private let minimumSamples: Int
+    @ObservationIgnored private let stopTail: Duration
+    /// True while the microphone is still open for the stop tail.
+    @ObservationIgnored private var isInStopTail = false
     @ObservationIgnored private let containsSpeech: @Sendable ([Float]) -> Bool
     @ObservationIgnored private var pressedAt: TimeInterval?
     @ObservationIgnored private let transcriptionTimeout: @Sendable (_ sampleCount: Int) -> Duration
@@ -92,6 +107,7 @@ public final class DictationController {
         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         holdThreshold: TimeInterval = 0.35,
         minimumDuration: TimeInterval = 0.3,
+        stopTail: Duration = .milliseconds(250),
         transcriptionTimeout: @escaping @Sendable (_ sampleCount: Int) -> Duration = DictationController.defaultTranscriptionTimeout,
         containsSpeech: @escaping @Sendable ([Float]) -> Bool = { SpeechActivity.containsSpeech($0) }
     ) {
@@ -101,6 +117,7 @@ public final class DictationController {
         self.now = now
         self.holdThreshold = holdThreshold
         self.minimumSamples = Int(minimumDuration * Self.sampleRate)
+        self.stopTail = stopTail
         self.containsSpeech = containsSpeech
         self.transcriptionTimeout = transcriptionTimeout
     }
@@ -157,6 +174,7 @@ public final class DictationController {
             level = 0
             state = .ready
         case .transcribing:
+            closeStopTail()
             abandonTranscription()
             state = .ready
         case .loadingModel, .ready, .unavailable:
@@ -168,6 +186,17 @@ public final class DictationController {
     /// dictation. Call for any input that isn't the dictation shortcut.
     public func noteOtherInput() {
         history.otherInput()
+    }
+
+    /// The microphone stopped on its own (device unplugged, audio system error) during recording.
+    /// Whatever was captured is dropped, since it may be cut off mid-word.
+    public func recordingFailed(_ message: String) {
+        guard state == .recording else { return }
+        pressedAt = nil
+        _ = recorder.stop()
+        level = 0
+        state = .ready
+        report(message)
     }
 
     /// Types the undelivered transcript again, e.g. after the user fixed the permission.
@@ -211,18 +240,39 @@ public final class DictationController {
     }
 
     private func finishRecording() {
-        let samples = recorder.stop()
-        level = 0
-        // Too short or silent: nothing was said, and Whisper would only invent text.
-        guard samples.count >= minimumSamples, containsSpeech(samples) else {
-            state = .ready
-            return
-        }
+        let stoppedAt = now()
         state = .transcribing
         generation += 1
         let id = generation
+        isInStopTail = true
+        transcription = Task { await finishAndTranscribe(id: id, stoppedAt: stoppedAt) }
+    }
+
+    /// Closes the microphone if it's still open for the stop tail, returning what it recorded.
+    @discardableResult
+    private func closeStopTail() -> [Float] {
+        guard isInStopTail else { return [] }
+        isInStopTail = false
+        level = 0
+        return recorder.stop()
+    }
+
+    /// Keeps the microphone open for `stopTail` after the user stops. People release the shortcut
+    /// on (not after) their last syllable, and the newest audio buffer is still in flight; cutting
+    /// there clips the last word, which also makes Whisper treat the sentence as unfinished and
+    /// drop its closing punctuation.
+    private func finishAndTranscribe(id: Int, stoppedAt: TimeInterval) async {
+        if stopTail > .zero { try? await Task.sleep(for: stopTail) }
+        // Cancelled during the tail: cancel() already closed the mic; leave without typing.
+        guard id == generation else { return }
+        let samples = closeStopTail()
+        // Too short or silent: nothing was said, and Whisper would only invent text.
+        guard samples.count >= minimumSamples, containsSpeech(samples) else {
+            transcription = nil
+            state = .ready
+            return
+        }
         let timeout = transcriptionTimeout(samples.count)
-        transcription = Task { await transcribeAndInsert(samples, id: id) }
         watchdog = Task { [weak self] in
             guard (try? await Task.sleep(for: timeout)) != nil else { return }
             guard let self, generation == id, state == .transcribing else { return }
@@ -230,6 +280,7 @@ public final class DictationController {
             report("Transcription took too long and was stopped. Please try again.")
             state = .ready
         }
+        await transcribeAndInsert(samples, id: id, stoppedAt: stoppedAt)
     }
 
     /// Cancels the running transcription and makes sure its result, if it still arrives, is dropped.
@@ -241,13 +292,16 @@ public final class DictationController {
         watchdog = nil
     }
 
-    private func transcribeAndInsert(_ samples: [Float], id: Int) async {
+    private func transcribeAndInsert(_ samples: [Float], id: Int, stoppedAt: TimeInterval) async {
         let outcome: Result<String, any Error>
+        let transcriptionStart = now()
+        var transcriptionEnd = transcriptionStart
         do {
             outcome = .success(try await transcriber.transcribe(samples, language: language.whisperCode))
         } catch {
             outcome = .failure(error)
         }
+        transcriptionEnd = now()
         // Cancelled or timed out meanwhile: the user has moved on, so type nothing.
         guard id == generation else { return }
         watchdog?.cancel()
@@ -273,6 +327,11 @@ public final class DictationController {
             try inserter.insert(typed)
             history.didInsert(typed)
             undeliveredTranscript = nil
+            onTiming?(DictationTiming(
+                audioSeconds: Double(samples.count) / Self.sampleRate,
+                releaseToTypedSeconds: now() - stoppedAt,
+                transcriptionSeconds: transcriptionEnd - transcriptionStart
+            ))
         } catch {
             undeliveredTranscript = text
             report("\(error.localizedDescription) Your dictation is kept in the menu bar menu.")

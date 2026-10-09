@@ -69,7 +69,7 @@ flowchart LR
 
 | Target | Responsibility |
 | --- | --- |
-| `DictationCore` | Pure logic: tap/hold state machine, shortcut chord model and matcher, transcript cleanup, text chunking. Defines the ports. Fully unit-tested with fakes. |
+| `DictationCore` | Pure logic: tap/hold state machine, shortcut chord model and matcher, transcript cleanup, the punctuation prompt given to Whisper, text chunking. Defines the ports. Fully unit-tested with fakes. |
 | `WhisperTranscription` | The **only** code that imports WhisperKit. Swap the model/engine here. |
 | `Dictator` | macOS adapters (hotkey, mic, typing, permissions) and SwiftUI/AppKit UI. Composition root is `AppModel`. |
 

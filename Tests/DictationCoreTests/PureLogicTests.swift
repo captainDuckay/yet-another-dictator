@@ -78,6 +78,38 @@ struct SpeechActivityTests {
     }
 }
 
+struct DictationPromptTests {
+    @Test func promptIsPunctuatedInBothLanguages() {
+        let prompt = DictationPrompt.text
+        #expect(prompt.contains("?") && prompt.contains("."))
+        #expect(prompt.contains("tak") && prompt.contains("thanks"))
+        #expect(prompt.last == ".")
+    }
+
+    @Test(arguments: [
+        DictationPrompt.text,
+        "Hej, hvordan går det? Det går godt, tak. Hello, how are you?",
+        "hello how are you i'm fine thanks",
+        " Det går godt, tak. Hello, how are you? I'm fine, thanks. ",
+    ])
+    func detectsPromptEcho(_ transcript: String) {
+        #expect(DictationPrompt.isEcho(transcript))
+    }
+
+    @Test(arguments: [
+        "",
+        "Tak.",
+        "Hello, how are you?",
+        "Det går godt, tak.",
+        "Hello, how are you? I'm fine, thanks. And you?",
+        "Please send the report by Friday.",
+        "Hej, hvordan går det med projektet i dag? Det går godt nu.",
+    ])
+    func keepsRealDictation(_ transcript: String) {
+        #expect(!DictationPrompt.isEcho(transcript))
+    }
+}
+
 struct DictationLanguageTests {
     @Test func mapsToWhisperCodes() {
         #expect(DictationLanguage.automatic.whisperCode == nil)
@@ -345,5 +377,37 @@ struct ChordRecorderTests {
 @Suite struct SmartJoinQuoteTests {
     @Test func straightQuoteOpensAfterSpace() {
         #expect(SmartJoin.adjust("Hello", after: "She said \"") == "hello")
+    }
+}
+
+@Suite struct AudioRingBufferTests {
+    @Test func keepsEverythingUntilFull() {
+        var ring = AudioRingBuffer(capacity: 4)
+        ring.append(contentsOf: [1, 2, 3])
+        #expect(ring.samples == [1, 2, 3])
+    }
+
+    @Test func keepsOnlyTheNewestSamples() {
+        var ring = AudioRingBuffer(capacity: 4)
+        ring.append(contentsOf: [1, 2, 3])
+        ring.append(contentsOf: [4, 5, 6])
+        #expect(ring.samples == [3, 4, 5, 6])
+        ring.append(contentsOf: [7, 8, 9, 10, 11])
+        #expect(ring.samples == [8, 9, 10, 11])
+    }
+
+    @Test func removeAllEmptiesIt() {
+        var ring = AudioRingBuffer(capacity: 2)
+        ring.append(contentsOf: [1, 2, 3])
+        ring.removeAll()
+        #expect(ring.samples.isEmpty)
+        ring.append(contentsOf: [4])
+        #expect(ring.samples == [4])
+    }
+
+    @Test func zeroCapacityHoldsNothing() {
+        var ring = AudioRingBuffer(capacity: 0)
+        ring.append(contentsOf: [1, 2])
+        #expect(ring.samples.isEmpty)
     }
 }

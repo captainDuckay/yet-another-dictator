@@ -23,9 +23,17 @@ actor FakeTranscriber: Transcribing {
     var result = "hello world"
     var prepareError: (any Error)?
     private(set) var received: [[Float]] = []
+    /// How long transcription takes; `cooperative` decides whether it stops when cancelled.
+    var delay: Duration?
+    var cooperative = true
+    private(set) var sawCancellation = false
 
     func set(result: String) { self.result = result }
     func set(prepareError: any Error) { self.prepareError = prepareError }
+    func set(delay: Duration?, cooperative: Bool = true) {
+        self.delay = delay
+        self.cooperative = cooperative
+    }
 
     func prepare() async throws {
         if let prepareError { throw prepareError }
@@ -33,6 +41,20 @@ actor FakeTranscriber: Transcribing {
 
     func transcribe(_ samples: [Float]) async throws -> String {
         received.append(samples)
+        if let delay {
+            if cooperative {
+                do {
+                    try await Task.sleep(for: delay)
+                } catch {
+                    sawCancellation = true
+                    throw error
+                }
+            } else {
+                // Ignores cancellation, like a model that can't be interrupted mid-step.
+                let end = ContinuousClock.now + delay
+                while ContinuousClock.now < end { try? await Task.sleep(for: .milliseconds(5)) }
+            }
+        }
         return result
     }
 }
@@ -64,13 +86,14 @@ struct DictationControllerTests {
 
     final class Clock { var now: TimeInterval = 100 }
 
-    func makeController() async -> DictationController {
+    func makeController(timeout: Duration = .seconds(30)) async -> DictationController {
         let clock = clock
         let controller = DictationController(
             recorder: recorder,
             transcriber: transcriber,
             inserter: inserter,
-            now: { clock.now }
+            now: { clock.now },
+            transcriptionTimeout: { _ in timeout }
         )
         await controller.loadModel()
         recorder.samplesToReturn = Array(repeating: 0.1, count: 16_000)
@@ -149,6 +172,72 @@ struct DictationControllerTests {
         #expect(controller.state == .ready)
         #expect(await transcriber.received.isEmpty)
         #expect(inserter.inserted.isEmpty)
+    }
+
+    @Test func cancelDuringTranscriptionTypesNothing() async {
+        let controller = await makeController()
+        await transcriber.set(delay: .milliseconds(150), cooperative: false)
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        #expect(controller.state == .transcribing)
+
+        controller.cancel()
+        #expect(controller.state == .ready)
+
+        try? await Task.sleep(for: .milliseconds(400)) // the late result arrives meanwhile
+        #expect(inserter.inserted.isEmpty)
+        #expect(controller.lastError == nil)
+        #expect(controller.state == .ready)
+    }
+
+    @Test func cancelStopsACooperativeTranscriber() async {
+        let controller = await makeController()
+        await transcriber.set(delay: .seconds(60))
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        controller.cancel()
+
+        let deadline = ContinuousClock.now + .seconds(2)
+        while await !transcriber.sawCancellation, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(await transcriber.sawCancellation)
+    }
+
+    @Test func stuckTranscriptionTimesOut() async {
+        let controller = await makeController(timeout: .milliseconds(50))
+        await transcriber.set(delay: .seconds(60))
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+
+        #expect(controller.state == .ready)
+        #expect(controller.lastError?.contains("too long") == true)
+        #expect(inserter.inserted.isEmpty)
+    }
+
+    @Test func dictationWorksAgainAfterCancel() async {
+        let controller = await makeController()
+        await transcriber.set(delay: .milliseconds(100), cooperative: false)
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        controller.cancel()
+
+        await transcriber.set(delay: nil)
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        await waitUntilReady(controller)
+        try? await Task.sleep(for: .milliseconds(300)) // let the abandoned one finish too
+
+        #expect(inserter.inserted == ["hello world"])
+    }
+
+    @Test func defaultTimeoutGrowsWithAudioLength() {
+        #expect(DictationController.defaultTranscriptionTimeout(sampleCount: 0) == .seconds(30))
+        #expect(DictationController.defaultTranscriptionTimeout(sampleCount: 16_000 * 60) == .seconds(90))
     }
 
     @Test func emptyTranscriptInsertsNothing() async {

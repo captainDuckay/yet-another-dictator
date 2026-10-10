@@ -116,7 +116,8 @@ jobs:
         run: |
           set -euo pipefail
           codesign --verify --strict --deep --verbose=2 build/Dictator.app
-          codesign -dv --verbose=2 build/Dictator.app 2>&1 | grep -E '^(Authority|TeamIdentifier|Timestamp|Runtime)' || true
+          codesign -dv --verbose=2 build/Dictator.app 2>&1 | grep -E '^(Identifier|Authority|TeamIdentifier|Timestamp|Runtime)' || true
+          codesign -d -r- build/Dictator.app 2>&1 | grep designated || true
           spctl -a -vvv -t exec build/Dictator.app
           xcrun stapler validate build/Dictator.app
 

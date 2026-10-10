@@ -24,9 +24,11 @@ public protocol TextInserting: AnyObject {
     /// Throws a user-facing error if `insert` is known to fail (e.g. permission missing), asking
     /// for the permission if it can. Checked before recording so speech isn't wasted.
     func preflight() throws
-    func insert(_ text: String) throws
+    /// Types `text`. Long text is typed in chunks; if the calling task is cancelled between
+    /// chunks, typing stops and `CancellationError` is thrown (some text may already be typed).
+    func insert(_ text: String) async throws
     /// Deletes `count` characters before the cursor, as if Delete was pressed `count` times.
-    func deleteBackward(_ count: Int) throws
+    func deleteBackward(_ count: Int) async throws
 }
 
 // MARK: - State machine
@@ -170,7 +172,9 @@ public final class DictationController {
         }
     }
 
-    /// Stops recording, or abandons the running transcription, without typing anything.
+    /// Stops recording, or abandons the running transcription, without typing anything. While
+    /// the text is being typed, typing stops between chunks; what was typed stays, but isn't
+    /// offered for undo (it's only part of the dictation).
     public func cancel() {
         switch state {
         case .recording:
@@ -214,24 +218,30 @@ public final class DictationController {
     }
 
     /// Deletes exactly the characters the last dictation typed, if nothing else happened since.
-    public func undoLastDictation() {
+    public func undoLastDictation() async {
         guard state == .ready, let count = history.takeUndo() else { return }
         do {
-            try inserter.deleteBackward(count)
+            try await inserter.deleteBackward(count)
+        } catch is CancellationError {
+            return
         } catch {
             report(error)
         }
     }
 
     /// Types the undelivered transcript again, e.g. after the user fixed the permission.
-    public func retryUndelivered() {
+    public func retryUndelivered() async {
         guard state == .ready, let text = undeliveredTranscript else { return }
         do {
-            try inserter.insert(text)
+            try await inserter.insert(text)
             history.didInsert(text)
             undeliveredTranscript = nil
             lastError = nil
+        } catch is CancellationError {
+            // Partly typed at most: not undoable, and the full text stays in the menu.
+            history.otherInput()
         } catch {
+            history.otherInput()
             report(error)
         }
     }
@@ -330,16 +340,18 @@ public final class DictationController {
         guard id == generation else { return }
         watchdog?.cancel()
         watchdog = nil
-        transcription = nil
-        defer { state = .ready }
         let text: String
         do {
             text = TranscriptCleaner.clean(try outcome.get())
         } catch {
+            finishTranscription()
             report(error)
             return
         }
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty else {
+            finishTranscription()
+            return
+        }
         // The field's own text when it can be read; otherwise our previous dictation, as long as
         // nothing else was typed since; otherwise unknown, and the text is typed as transcribed.
         // An empty field reading next to a dictation we just typed means the app reports its text
@@ -347,8 +359,24 @@ public final class DictationController {
         let fieldText = textBeforeCursor?()
         let preceding = fieldText?.isEmpty == false ? fieldText : (history.lastInserted ?? fieldText)
         let typed = SmartJoin.adjust(text, after: preceding)
+        // Typing stays in `.transcribing`, so Cancel Dictation can still stop it. It runs inside
+        // the `transcription` task, which cancel() cancels; the inserter then stops between chunks.
+        let result: Result<Void, any Error>
         do {
-            try inserter.insert(typed)
+            try await inserter.insert(typed)
+            result = .success(())
+        } catch {
+            result = .failure(error)
+        }
+        // Cancelled while typing: cancel() already returned to Ready (and a new dictation may have
+        // started). Whatever got typed is only part of the dictation, so it can't be undone safely.
+        guard id == generation else {
+            history.otherInput()
+            return
+        }
+        finishTranscription()
+        switch result {
+        case .success:
             history.didInsert(typed)
             undeliveredTranscript = nil
             onTiming?(DictationTiming(
@@ -356,9 +384,22 @@ public final class DictationController {
                 releaseToTypedSeconds: now() - stoppedAt,
                 transcriptionSeconds: transcriptionEnd - transcriptionStart
             ))
-        } catch {
+        case .failure:
+            history.otherInput()
             undeliveredTranscript = text
-            report("\(error.localizedDescription) Your dictation is kept in the menu bar menu.")
+            report("\(result.failureMessage) Your dictation is kept in the menu bar menu.")
         }
+    }
+
+    /// The current transcription is done (typed, empty or failed): back to Ready.
+    private func finishTranscription() {
+        transcription = nil
+        state = .ready
+    }
+}
+
+private extension Result where Success == Void {
+    var failureMessage: String {
+        if case .failure(let error) = self { error.localizedDescription } else { "" }
     }
 }

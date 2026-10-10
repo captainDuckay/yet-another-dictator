@@ -4,8 +4,15 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-10
+
+Signed and notarized.
+
 ### Changed
-- The pure dictation core now comes from the shared [DictationCore](https://github.com/captains-chest/DictationCore) package (0.1.0, pinned exactly) instead of an in-repo target, so a future iOS app can use the same code. The code is the same, so the app behaves the same.
+- Dictator is now signed with an Apple Developer ID and notarized by Apple. It opens without the "Open Anyway" step, and macOS keeps its Microphone, Input Monitoring and Accessibility permissions when you update. If you're coming from 0.1.0, grant them once more.
+- Cancel Dictation now also stops typing a long dictation part-way. The part already typed stays, but it isn't offered for Undo.
+- The dictation core now comes from the shared [DictationCore](https://github.com/captains-chest/DictationCore) package, so a future iOS app can use the same code. The app behaves the same.
+- The app bundle includes its license and third-party notices.
 
 ### Fixed
 - A recording that reaches the 10-minute limit now stops and is typed, with a short notice, instead of silently dropping everything said after 10 minutes.

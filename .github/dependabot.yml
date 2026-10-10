@@ -13,6 +13,17 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Europe/Copenhagen"
+    # Default 3-day cooldown (GitHub's platform default) is fine for third-party packages.
+    # DictationCore must be excluded: it is our own package, pinned exact, and often has only
+    # one recent tag. When cooldown filters that sole tag, Dependabot sees an empty "latest"
+    # version and fails with illformed_requirement ["<="] (see Dependabot Updates run
+    # 38051879049 on 2026-10-10). Excluding it keeps weekly exact-pin review intact without
+    # that crash.
+    cooldown:
+      default-days: 3
+      exclude:
+        - "*DictationCore*"
+        - "*dictationcore*"
     groups:
       # Our own core gets its own PR, separate from third-party bumps.
       shared-core:

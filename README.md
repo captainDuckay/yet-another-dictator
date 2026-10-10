@@ -19,6 +19,17 @@ Core ML), bundled inside the app.
 
 That's the whole feature set. See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
+## Install
+
+1. Download `Dictator-<version>-macos-arm64.zip` from the
+   [latest release](https://github.com/captainDuckay/yet-another-dictator/releases) (optionally
+   check it against the `.sha256` with `shasum -a 256 -c`).
+2. Unzip it and move `Dictator.app` to `/Applications`.
+3. Open it. Signed, notarized releases (v0.1.1 and later) open without a Gatekeeper warning.
+4. Grant Microphone, Input Monitoring and Accessibility when asked. These permissions stay granted
+   when you update to a later signed release. If you're coming from v0.1.0 or earlier (ad-hoc
+   signed), grant them once more.
+
 ## Build
 
 Requires macOS 15+, Apple silicon, Xcode 26+ (Swift 6.2+).
@@ -34,7 +45,8 @@ first model load specialises Core ML for your chip and can take a few minutes; l
 about a second.
 
 For a stable signature (so macOS remembers permissions across rebuilds), sign with your own
-identity: `SIGN_IDENTITY="Apple Development: …" scripts/build-app.sh`. Ad-hoc builds (the default)
+identity: `SIGN_IDENTITY="Developer ID Application: …" scripts/build-app.sh` (or an Apple
+Development identity). A real identity also gets a secure timestamp. Ad-hoc builds (the default)
 must be re-granted Accessibility after each rebuild.
 
 ## Test
@@ -53,9 +65,12 @@ when `Model/` exists; run `scripts/fetch-model.sh` first.
   end-to-end test is skipped).
 - **Release** (`.github/workflows/release.yml`): publishing a GitHub release builds
   `Dictator.app` (version taken from the tag, `v` prefix stripped) and attaches
-  `Dictator-<tag>-macos-arm64.zip` plus its `.sha256`. Builds are ad-hoc signed and not notarised,
-  so on first launch users must allow it via System Settings → Privacy & Security → Open Anyway
-  (or `xattr -dr com.apple.quarantine Dictator.app`).
+  `Dictator-<tag>-macos-arm64.zip` plus its `.sha256`. From v0.1.1 the app is signed with
+  Developer ID, notarized and stapled (see `docs/adr/0003`), so it opens without a Gatekeeper
+  warning and macOS keeps its permissions across updates. Running the workflow manually
+  (`workflow_dispatch`) is a dry run: same pipeline, the zip is uploaded as an artifact, nothing
+  is published. v0.1.0 and earlier are ad-hoc signed and need System Settings → Privacy &
+  Security → Open Anyway on first launch.
 
 ## Architecture
 

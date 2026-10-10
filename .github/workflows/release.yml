@@ -3,21 +3,31 @@ name: Release
 on:
   release:
     types: [published]
+  # Dry run: builds, signs, notarizes and staples, then uploads the zip as a workflow artifact.
+  # Nothing is published or attached to a release.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp into the app (default: Info.plist)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event.release.tag_name }}
+  group: release-${{ github.event.release.tag_name || github.ref }}
 
 jobs:
   build-and-attach:
     runs-on: xcode-27
-    timeout-minutes: 60
+    timeout-minutes: 90
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       # Runs before the model is restored, so the slow end-to-end Core ML test is skipped.
       - name: Test
@@ -28,25 +38,136 @@ jobs:
           path: Model
           key: model-${{ hashFiles('scripts/model-manifest.txt') }}
 
-      - name: Build app
+      - name: Version
+        id: version
         env:
           TAG: ${{ github.event.release.tag_name }}
-        run: VERSION="${TAG#v}" scripts/build-app.sh
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ -n "$TAG" ]]; then
+            version="${TAG#v}"; label="$TAG"
+          else
+            version="${INPUT_VERSION:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)}"
+            label="v${version}-dryrun-${GITHUB_SHA::7}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "label=$label" >> "$GITHUB_OUTPUT"
+
+      # A throwaway keychain holds the Developer ID identity for this job only.
+      - name: Import signing identity
+        id: keychain
+        env:
+          P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          p12="$RUNNER_TEMP/developer-id.p12"
+          trap 'rm -f "$p12"' EXIT
+          security list-keychains -d user | tr -d '" ' > "$RUNNER_TEMP/keychains-before"
+          (umask 077; printf '%s' "$P12_BASE64" | base64 --decode > "$p12")
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign -f pkcs12
+          rm -f "$p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity="$(security find-identity -v -p codesigning "$keychain" \
+            | awk -v team="($TEAM_ID)" '/Developer ID Application/ && index($0, team) { print $2; exit }')"
+          if [[ -z "$identity" ]]; then echo "::error::No Developer ID Application identity for the team"; exit 1; fi
+          echo "keychain=$keychain" >> "$GITHUB_OUTPUT"
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
+
+      - name: Build and sign app
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SIGN_IDENTITY: ${{ steps.keychain.outputs.identity }}
+        run: scripts/build-app.sh
+
+      - name: Notarize and staple
+        env:
+          ASC_KEY: ${{ secrets.APPLE_ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/asc-key.p8"
+          (umask 077; printf '%s\n' "$ASC_KEY" > "$key")
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          ditto -c -k --keepParent build/Dictator.app build/notarize.zip
+          xcrun notarytool submit build/notarize.zip \
+            --key "$key" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" \
+            --wait --timeout 60m --output-format json > build/notarization.json
+          status="$(plutil -extract status raw build/notarization.json)"
+          id="$(plutil -extract id raw build/notarization.json)"
+          echo "Notarization $id: $status"
+          if [[ "$status" != "Accepted" ]]; then
+            xcrun notarytool log "$id" --key "$key" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" || true
+            exit 1
+          fi
+          rm build/notarize.zip
+          xcrun stapler staple build/Dictator.app
+
+      - name: Verify
+        run: |
+          set -euo pipefail
+          codesign --verify --strict --deep --verbose=2 build/Dictator.app
+          codesign -dv --verbose=2 build/Dictator.app 2>&1 | grep -E '^(Authority|TeamIdentifier|Timestamp|Runtime)' || true
+          spctl -a -vvv -t exec build/Dictator.app
+          xcrun stapler validate build/Dictator.app
 
       - name: Package
         id: package
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          LABEL: ${{ steps.version.outputs.label }}
         run: |
-          zip="build/Dictator-${TAG}-macos-arm64.zip"
+          zip="build/Dictator-${LABEL}-macos-arm64.zip"
           ditto -c -k --keepParent build/Dictator.app "$zip"
           shasum -a 256 "$zip" | sed 's|build/||' > "$zip.sha256"
           ls -lh build/*.zip
           echo "zip=$zip" >> "$GITHUB_OUTPUT"
 
+      # Gatekeeper's view of what users download: unzip the final archive and assess it again.
+      - name: Verify the zip
+        env:
+          ZIP: ${{ steps.package.outputs.zip }}
+        run: |
+          set -euo pipefail
+          check="$RUNNER_TEMP/zip-check"
+          rm -rf "$check" && mkdir -p "$check"
+          ditto -x -k "$ZIP" "$check"
+          spctl -a -vvv -t exec "$check/Dictator.app"
+          xcrun stapler validate "$check/Dictator.app"
+          (cd build && shasum -a 256 -c "$(basename "$ZIP").sha256")
+
+      - name: Upload dry-run artifact
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Dictator-${{ steps.version.outputs.label }}-macos-arm64
+          path: |
+            ${{ steps.package.outputs.zip }}
+            ${{ steps.package.outputs.zip }}.sha256
+          retention-days: 7
+
       - name: Attach to release
+        if: env.DRY_RUN != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
           ZIP: ${{ steps.package.outputs.zip }}
         run: gh release upload "$TAG" "$ZIP" "$ZIP.sha256" --clobber --repo "$GITHUB_REPOSITORY"
+
+      # Always runs, even if a step above failed, so the identity never outlives the job.
+      - name: Delete keychain
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/keychains-before" ]]; then
+            security list-keychains -d user -s $(cat "$RUNNER_TEMP/keychains-before")
+          fi
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/developer-id.p12" "$RUNNER_TEMP/asc-key.p8" "$RUNNER_TEMP/keychains-before"

@@ -22,6 +22,8 @@ if [[ -n "${VERSION:-}" ]]; then
 fi
 # Shown in the What's New window; bundled so it works offline.
 cp "$root/CHANGELOG.md" "$app/Contents/Resources/CHANGELOG.md"
+cp "$root/LICENSE" "$app/Contents/Resources/LICENSE"
+cp "$root/THIRD_PARTY_NOTICES.md" "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
 iconutil --convert icns "$root/Resources/AppIcon.iconset" --output "$app/Contents/Resources/AppIcon.icns"
 # Hidden files (e.g. partial downloads) are excluded.
 rsync -a --exclude '.*' "$root/Model/" "$app/Contents/Resources/Model/"

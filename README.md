@@ -116,3 +116,8 @@ flowchart LR
   run `swift test`.
 - **Model:** regenerate `scripts/model-manifest.txt` against a new pinned commit, then delete
   `Model/` and run `scripts/fetch-model.sh`.
+
+## License
+
+MIT © 2026 Nicki Skipper Otte. See [LICENSE](LICENSE). Bundled third-party components (WhisperKit,
+the Whisper model) are credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

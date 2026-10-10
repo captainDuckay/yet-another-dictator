@@ -1,0 +1,41 @@
+name: Verify release
+
+# Downloads a published release's zip the way a user gets it, and checks it like Gatekeeper does.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to verify, e.g. v0.1.1"
+        required: true
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Download and verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/verify"
+          rm -rf "$dir" && mkdir -p "$dir" && cd "$dir"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'Dictator-*-macos-arm64.zip*'
+          zip="Dictator-${TAG}-macos-arm64.zip"
+          shasum -a 256 -c "$zip.sha256"
+          # Mark it as downloaded from the internet, as a browser would, so Gatekeeper assesses it fully.
+          xattr -w com.apple.quarantine "0081;$(printf '%x' "$(date +%s)");Safari;" "$zip"
+          ditto -x -k "$zip" .
+          codesign --verify --strict --deep --verbose=2 Dictator.app
+          spctl -a -vvv -t exec Dictator.app
+          xcrun stapler validate Dictator.app
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Dictator.app/Contents/Info.plist

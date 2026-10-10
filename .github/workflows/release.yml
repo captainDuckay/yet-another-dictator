@@ -171,3 +171,11 @@ jobs:
           fi
           security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
           rm -f "$RUNNER_TEMP/developer-id.p12" "$RUNNER_TEMP/asc-key.p8" "$RUNNER_TEMP/keychains-before"
+
+  # Checks what users actually download: the asset as attached to the release.
+  verify-published:
+    needs: build-and-attach
+    if: github.event_name == 'release'
+    uses: ./.github/workflows/verify-release.yml
+    with:
+      tag: ${{ github.event.release.tag_name }}

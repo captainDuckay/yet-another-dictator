@@ -4,6 +4,11 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-10
+
+### Fixed
+- After updating from 0.1.0, Input Monitoring and Accessibility could stay "not granted" even though they were switched on in System Settings. That switch belonged to the old unsigned build. Settings now explains this and opens the right page: remove Dictator from the list with −, then click Grant… again. From 0.1.1 on, updates keep these permissions.
+
 ## [0.1.1] - 2026-10-10
 
 Signed and notarized.

@@ -81,6 +81,22 @@ struct SettingsView: View {
                     Text("After enabling Dictator in System Settings, relaunch to apply.")
                         .foregroundStyle(.secondary)
                 }
+                if !canListen || !canType {
+                    // An older build's entry (e.g. the unsigned 0.1.0) can stay switched on in
+                    // System Settings without applying to this build, and macOS won't ask again.
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Already switched on in System Settings? macOS may be keeping the permission for an older copy of Dictator. Select Dictator in the list, remove it with −, then click Grant… here again.")
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            if !canListen {
+                                Button("Open Input Monitoring…") { Permissions.openPrivacySettings("Privacy_ListenEvent") }
+                            }
+                            if !canType {
+                                Button("Open Accessibility…") { Permissions.openPrivacySettings("Privacy_Accessibility") }
+                            }
+                        }
+                    }
+                }
             }
 
             Section("Model") {
@@ -107,6 +123,9 @@ struct SettingsView: View {
         // app does not reliably become active again when the user returns to this window.
         // (Accessibility and Input Monitoring may be cached per process until a relaunch.)
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            refresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refresh()
         }
     }

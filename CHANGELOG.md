@@ -4,6 +4,9 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 
 ## [Unreleased]
 
+### Changed
+- The pure dictation core now comes from the shared [DictationCore](https://github.com/captains-chest/DictationCore) package (0.1.0, pinned exactly) instead of an in-repo target, so a future iOS app can use the same code. The code is the same, so the app behaves the same.
+
 ### Fixed
 - A recording that reaches the 10-minute limit now stops and is typed, with a short notice, instead of silently dropping everything said after 10 minutes.
 

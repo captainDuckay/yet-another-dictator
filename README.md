@@ -62,7 +62,7 @@ when `Model/` exists; run `scripts/fetch-model.sh` first.
 ```mermaid
 flowchart LR
     Hotkey[EventTapHotkey<br/>CGEvent tap] --> Controller
-    subgraph DictationCore [DictationCore · no dependencies]
+    subgraph DictationCore [DictationCore package · no dependencies]
         Controller[DictationController<br/>state machine]
         Ports[[AudioRecording · Transcribing · TextInserting]]
     end
@@ -75,7 +75,7 @@ flowchart LR
 
 | Target | Responsibility |
 | --- | --- |
-| `DictationCore` | Pure logic: tap/hold state machine, shortcut chord model and matcher, transcript cleanup, the punctuation prompt given to Whisper, text chunking. Defines the ports. Fully unit-tested with fakes. |
+| `DictationCore` | **Separate package**, [captains-chest/DictationCore](https://github.com/captains-chest/DictationCore), pinned exactly and shared with the iOS app. Pure logic: tap/hold state machine, shortcut chord model and matcher, transcript cleanup and smart spacing, the punctuation prompt given to Whisper, text chunking, capture buffer, undo history, version/What's New/update-check logic. Defines the ports. Its tests (with fakes) live in that repo. Change it there, tag a release, then bump the exact pin here (see `docs/adr/0002`). |
 | `WhisperTranscription` | The **only** code that imports WhisperKit. Swap the model/engine here. |
 | `Dictator` | macOS adapters (hotkey, mic, typing, permissions) and SwiftUI/AppKit UI. Composition root is `AppModel`. |
 

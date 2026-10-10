@@ -34,3 +34,5 @@ The AVAudioEngine tap, format conversion and device handling stay in the app
 - Callbacks from the buffer must stay non-blocking; the app hops to the main actor with
   `Task { @MainActor in … }`.
 - Out of scope: changing the 10-minute value, transcribing long recordings in chunks, and any UI.
+
+> Update (2026-10-10): DictationCore is now its own package; see ADR 0002.

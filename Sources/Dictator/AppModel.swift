@@ -91,7 +91,7 @@ final class AppModel {
         hotkey.onRelease = { controller.hotkeyReleased() }
         hotkey.onInterrupt = { controller.cancel() }
         // Smart spacing: know when the cursor may have moved since the last dictation.
-        hotkey.onUndo = { controller.undoLastDictation() }
+        hotkey.onUndo = { Task { await controller.undoLastDictation() } }
         // Clicks and arrow keys inside our own menu don't move the text cursor.
         hotkey.onOtherInput = { [weak self] in
             if self?.isMenuOpen != true { controller.noteOtherInput() }

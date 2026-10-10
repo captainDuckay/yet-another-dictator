@@ -18,7 +18,7 @@ struct MenuContent: View {
             // Let the menu close so the field you dictated into has keyboard focus again.
             Task {
                 try? await Task.sleep(for: .milliseconds(250))
-                model.controller.undoLastDictation()
+                await model.controller.undoLastDictation()
             }
         }
         .disabled(!model.controller.canUndo)
@@ -29,7 +29,7 @@ struct MenuContent: View {
                 // Let the menu close so the field you were in has keyboard focus again.
                 Task {
                     try? await Task.sleep(for: .milliseconds(250))
-                    model.controller.retryUndelivered()
+                    await model.controller.retryUndelivered()
                 }
             }
             Button("Discard") { model.controller.discardUndelivered() }

@@ -65,21 +65,36 @@ actor FakeTranscriber: Transcribing {
 
 @MainActor
 final class FakeInserter: TextInserting {
+    /// Completed inserts.
     private(set) var inserted: [String] = []
+    /// Every character "posted", including those of an insert that was cancelled part-way.
+    private(set) var posted: [Character] = []
     var preflightError: (any Error)?
     var insertError: (any Error)?
+    /// When set, each character is posted separately with this pause, like a long text typed in
+    /// chunks, and cancellation is checked between them like the real inserter does.
+    var delayPerCharacter: Duration?
 
     func preflight() throws {
         if let preflightError { throw preflightError }
     }
 
-    func insert(_ text: String) throws {
+    func insert(_ text: String) async throws {
         if let insertError { throw insertError }
+        if let delayPerCharacter {
+            for character in text {
+                if Task.isCancelled { throw CancellationError() }
+                posted.append(character)
+                try? await Task.sleep(for: delayPerCharacter)
+            }
+        } else {
+            posted.append(contentsOf: text)
+        }
         inserted.append(text)
     }
 
     private(set) var deleted: [Int] = []
-    func deleteBackward(_ count: Int) throws {
+    func deleteBackward(_ count: Int) async throws {
         if let insertError { throw insertError }
         deleted.append(count)
     }
@@ -402,12 +417,12 @@ struct DictationControllerTests {
         await dictate(controller, "and more 👋🏽.")
         #expect(controller.canUndo)
 
-        controller.undoLastDictation()
+        await controller.undoLastDictation()
 
         #expect(inserter.deleted == [" And more 👋🏽.".count])
         #expect(inserter.deleted == [12]) // the emoji with skin tone is one character
         #expect(!controller.canUndo)
-        controller.undoLastDictation() // only once
+        await controller.undoLastDictation() // only once
         #expect(inserter.deleted.count == 1)
     }
 
@@ -416,7 +431,7 @@ struct DictationControllerTests {
         await dictate(controller, "Hello world.")
         controller.noteOtherInput()
         #expect(!controller.canUndo)
-        controller.undoLastDictation()
+        await controller.undoLastDictation()
         #expect(inserter.deleted.isEmpty)
     }
 
@@ -426,7 +441,7 @@ struct DictationControllerTests {
         await dictate(controller, "Hello.")
         controller.hotkeyPressed()
         #expect(!controller.canUndo)
-        controller.undoLastDictation()
+        await controller.undoLastDictation()
         #expect(inserter.deleted.isEmpty)
     }
 
@@ -475,6 +490,72 @@ struct DictationControllerTests {
         await waitUntilReady(controller)
         #expect(await transcriber.received.count == 1)
         #expect(inserter.inserted.count == 1)
+    }
+
+    @Test func cancelWhileTypingStopsPostingAndEndsReady() async {
+        let controller = await makeController()
+        await transcriber.set(result: "This is a long dictation that takes a while to type.")
+        inserter.delayPerCharacter = .milliseconds(5)
+
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        // Wait until typing has started.
+        let deadline = ContinuousClock.now + .seconds(2)
+        while inserter.posted.isEmpty, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(controller.state == .transcribing)
+
+        controller.cancel()
+        #expect(controller.state == .ready)
+        let postedAtCancel = inserter.posted.count
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(inserter.posted.count <= postedAtCancel + 1) // at most the chunk in flight
+        #expect(inserter.posted.count < 52)
+        #expect(inserter.inserted.isEmpty)
+        #expect(controller.state == .ready)
+        #expect(controller.lastError == nil)
+        #expect(controller.undeliveredTranscript == nil)
+        #expect(!controller.canUndo) // a partial insert is never undoable
+    }
+
+    @Test func cancelWhileTypingReportsNoTimingAndDoesntJoinTheNextDictation() async {
+        let controller = await makeController()
+        var timings: [DictationTiming] = []
+        controller.onTiming = { timings.append($0) }
+        await transcriber.set(result: "First dictation that is cancelled.")
+        inserter.delayPerCharacter = .milliseconds(5)
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        let deadline = ContinuousClock.now + .seconds(2)
+        while inserter.posted.isEmpty, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        controller.cancel()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        inserter.delayPerCharacter = nil
+        await dictate(controller, "next one.")
+        #expect(timings.count == 1) // only the second dictation
+        #expect(inserter.inserted == ["next one."]) // no smart join with the partial text
+    }
+
+    @Test func aNewDictationStartedRightAfterCancellingTypingIsNotStopped() async {
+        let controller = await makeController()
+        await transcriber.set(result: "A long dictation being typed slowly.")
+        inserter.delayPerCharacter = .milliseconds(5)
+        controller.hotkeyPressed()
+        controller.hotkeyPressed()
+        let deadline = ContinuousClock.now + .seconds(2)
+        while inserter.posted.isEmpty, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        controller.cancel()
+        controller.hotkeyPressed()
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(controller.state == .recording) // the old task didn't reset it to .ready
+        #expect(recorder.isRecording)
     }
 
     @Test func emptyTranscriptInsertsNothing() async {
@@ -527,11 +608,11 @@ struct DictationControllerTests {
         #expect(controller.undeliveredTranscript == "hello world")
         #expect(controller.lastError != nil)
 
-        controller.retryUndelivered()
+        await controller.retryUndelivered()
         #expect(controller.undeliveredTranscript == "hello world", "still failing, still kept")
 
         inserter.insertError = nil
-        controller.retryUndelivered()
+        await controller.retryUndelivered()
         #expect(inserter.inserted == ["hello world"])
         #expect(controller.undeliveredTranscript == nil)
         #expect(controller.lastError == nil)

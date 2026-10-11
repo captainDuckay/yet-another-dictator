@@ -114,13 +114,23 @@ final class AppModel {
             MainActor.assumeIsolated { controller.noteOtherInput() }
         }
 
-        Task {
-            // Another copy already running owns the keyboard tap; quit before installing ours.
-            guard await SingleInstance.claim() else {
-                NSApp.terminate(nil)
-                return
+        if ProcessInfo.processInfo.environment["DICTATOR_SETTINGS_PREVIEW"] == "1" {
+            // Visual check only: show Settings without a keyboard tap, microphone, or download.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(400))
+                NSApp.setActivationPolicy(.regular)
+                NSApp.activate(ignoringOtherApps: true)
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
             }
-            start()
+        } else {
+            Task {
+                // Another copy already running owns the keyboard tap; quit before installing ours.
+                guard await SingleInstance.claim() else {
+                    NSApp.terminate(nil)
+                    return
+                }
+                start()
+            }
         }
     }
 

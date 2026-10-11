@@ -11,111 +11,15 @@ struct SettingsView: View {
     @State private var requestedListening = false
     @State private var loginItem = LoginItem.status
     @State private var loginItemError: String?
+    @State private var category: SettingsCategory? = .shortcut
 
     var body: some View {
-        Form {
-            ShortcutSection(model: model)
-
-            Section("General") {
-                Toggle("Open at login", isOn: Binding(
-                    get: { loginItem != .disabled },
-                    set: { enabled in
-                        loginItemError = LoginItem.set(enabled: enabled)
-                        loginItem = LoginItem.status
-                    }
-                ))
-                if loginItem == .needsApproval {
-                    LabeledContent("Allow Dictator in Login Items to finish.") {
-                        Button("Open Login Items…") { LoginItem.openSystemSettings() }
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                if let loginItemError {
-                    Text(loginItemError).foregroundStyle(.red)
-                }
-                Toggle(isOn: Binding(
-                    get: { model.checksForUpdates },
-                    set: { model.checksForUpdates = $0 }
-                )) {
-                    Text("Check for updates daily")
-                    Text("Asks GitHub whether a newer version exists. Nothing is downloaded or installed, and dictation never uses the network.")
-                }
-                Toggle(isOn: Binding(
-                    get: { model.keepsMicrophoneReady },
-                    set: { model.keepsMicrophoneReady = $0 }
-                )) {
-                    Text("Keep microphone ready")
-                    Text("Catches the first word even if you start speaking as you press the shortcut. macOS shows the microphone indicator while this is on. Audio is held in memory for under half a second and never saved.")
-                }
-            }
-
-            Section("Permissions") {
-                PermissionRow(title: "Microphone", granted: microphone == .granted) {
-                    Task {
-                        if microphone == .notDetermined { _ = await Permissions.requestMicrophone() }
-                        else { Permissions.openPrivacySettings("Privacy_Microphone") }
-                        refresh()
-                    }
-                }
-                PermissionRow(
-                    title: "Input Monitoring (detect shortcut)",
-                    granted: canListen,
-                    actionTitle: requestedListening ? "Relaunch" : "Grant…"
-                ) {
-                    if requestedListening { return Permissions.relaunch() }
-                    if !Permissions.requestListenEvents() { Permissions.openPrivacySettings("Privacy_ListenEvent") }
-                    requestedListening = true
-                    refresh()
-                }
-                PermissionRow(
-                    title: "Accessibility (type into fields)",
-                    granted: canType,
-                    actionTitle: requestedTyping ? "Relaunch" : "Grant…"
-                ) {
-                    if requestedTyping { return Permissions.relaunch() }
-                    if !Permissions.requestPostEvents() { Permissions.openPrivacySettings("Privacy_Accessibility") }
-                    requestedTyping = true
-                    refresh()
-                }
-                if (requestedListening && !canListen) || (requestedTyping && !canType) {
-                    Text("After enabling Dictator in System Settings, relaunch to apply.")
-                        .foregroundStyle(.secondary)
-                }
-                if !canListen || !canType {
-                    // An older build's entry (e.g. the unsigned 0.1.0) can stay switched on in
-                    // System Settings without applying to this build, and macOS won't ask again.
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Already switched on in System Settings? macOS may be keeping the permission for an older copy of Dictator. Select Dictator in the list, remove it with −, then click Grant… here again.")
-                            .foregroundStyle(.secondary)
-                        HStack {
-                            if !canListen {
-                                Button("Open Input Monitoring…") { Permissions.openPrivacySettings("Privacy_ListenEvent") }
-                            }
-                            if !canType {
-                                Button("Open Accessibility…") { Permissions.openPrivacySettings("Privacy_Accessibility") }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Section("Model") {
-                LabeledContent(
-                    "Whisper Large v3 Turbo",
-                    value: model.modelDownload.statusText ?? model.controller.state.statusText
-                )
-                Picker("Language", selection: Binding(get: { model.language }, set: { model.language = $0 })) {
-                    ForEach(DictationLanguage.allCases, id: \.self) { language in
-                        Text(language.displayName).tag(language)
-                    }
-                }
-                Text("Runs entirely on this Mac. Audio never leaves the device and is not saved. The one-time model download (about 1.6 GB, from Hugging Face, verified by SHA-256) is the only network use besides the optional update check.")
-                    .foregroundStyle(.secondary)
-            }
+        HStack(spacing: 0) {
+            categoryList
+            Divider()
+            categoryDetail
         }
-        .formStyle(.grouped)
-        .frame(width: 460)
-        .fixedSize()
+        .frame(width: SettingsWindowSize.width, height: SettingsWindowSize.height)
         // Show in the Dock and ⌘Tab while Settings is open so the window can be found again.
         .onAppear {
             NSApp.setActivationPolicy(.regular)
@@ -131,6 +35,146 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refresh()
         }
+        .onChange(of: category) {
+            if category == nil { category = .shortcut }
+        }
+    }
+
+    private var categoryList: some View {
+        List(SettingsCategory.allCases, selection: $category) { item in
+            Text(item.title)
+        }
+        .listStyle(.sidebar)
+        .frame(width: SettingsWindowSize.sidebarWidth)
+        .frame(maxHeight: .infinity)
+        .accessibilityLabel("Settings categories")
+    }
+
+    /// The selected page. A bounded scroll view, so a tall page (the keyboard, or the permission
+    /// guidance) scrolls inside the pane instead of growing the window.
+    private var categoryDetail: some View {
+        ScrollView {
+            detailForm
+                .frame(maxWidth: .infinity, alignment: .top)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .id(category)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var detailForm: some View {
+        Form {
+            switch category ?? .shortcut {
+            case .shortcut: ShortcutSection(model: model)
+            case .general: generalSection
+            case .permissions: permissionsSection
+            case .model: modelSection
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var generalSection: some View {
+        Section("General") {
+            Toggle("Open at login", isOn: Binding(
+                get: { loginItem != .disabled },
+                set: { enabled in
+                    loginItemError = LoginItem.set(enabled: enabled)
+                    loginItem = LoginItem.status
+                }
+            ))
+            if loginItem == .needsApproval {
+                LabeledContent("Allow Dictator in Login Items to finish.") {
+                    Button("Open Login Items…") { LoginItem.openSystemSettings() }
+                }
+                .foregroundStyle(.secondary)
+            }
+            if let loginItemError {
+                Text(loginItemError).foregroundStyle(.red)
+            }
+            Toggle(isOn: Binding(
+                get: { model.checksForUpdates },
+                set: { model.checksForUpdates = $0 }
+            )) {
+                Text("Check for updates daily")
+                Text("Asks GitHub whether a newer version exists. Nothing is downloaded or installed, and dictation never uses the network.")
+            }
+            Toggle(isOn: Binding(
+                get: { model.keepsMicrophoneReady },
+                set: { model.keepsMicrophoneReady = $0 }
+            )) {
+                Text("Keep microphone ready")
+                Text("Catches the first word even if you start speaking as you press the shortcut. macOS shows the microphone indicator while this is on. Audio is held in memory for under half a second and never saved.")
+            }
+        }
+    }
+
+    private var permissionsSection: some View {
+        Section("Permissions") {
+            PermissionRow(title: "Microphone", granted: microphone == .granted) {
+                Task {
+                    if microphone == .notDetermined { _ = await Permissions.requestMicrophone() }
+                    else { Permissions.openPrivacySettings("Privacy_Microphone") }
+                    refresh()
+                }
+            }
+            PermissionRow(
+                title: "Input Monitoring (detect shortcut)",
+                granted: canListen,
+                actionTitle: requestedListening ? "Relaunch" : "Grant…"
+            ) {
+                if requestedListening { return Permissions.relaunch() }
+                if !Permissions.requestListenEvents() { Permissions.openPrivacySettings("Privacy_ListenEvent") }
+                requestedListening = true
+                refresh()
+            }
+            PermissionRow(
+                title: "Accessibility (type into fields)",
+                granted: canType,
+                actionTitle: requestedTyping ? "Relaunch" : "Grant…"
+            ) {
+                if requestedTyping { return Permissions.relaunch() }
+                if !Permissions.requestPostEvents() { Permissions.openPrivacySettings("Privacy_Accessibility") }
+                requestedTyping = true
+                refresh()
+            }
+            if (requestedListening && !canListen) || (requestedTyping && !canType) {
+                Text("After enabling Dictator in System Settings, relaunch to apply.")
+                    .foregroundStyle(.secondary)
+            }
+            if !canListen || !canType {
+                // An older build's entry (e.g. the unsigned 0.1.0) can stay switched on in
+                // System Settings without applying to this build, and macOS won't ask again.
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Already switched on in System Settings? macOS may be keeping the permission for an older copy of Dictator. Select Dictator in the list, remove it with −, then click Grant… here again.")
+                        .foregroundStyle(.secondary)
+                    HStack {
+                        if !canListen {
+                            Button("Open Input Monitoring…") { Permissions.openPrivacySettings("Privacy_ListenEvent") }
+                        }
+                        if !canType {
+                            Button("Open Accessibility…") { Permissions.openPrivacySettings("Privacy_Accessibility") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var modelSection: some View {
+        Section("Model") {
+            LabeledContent(
+                "Whisper Large v3 Turbo",
+                value: model.modelDownload.statusText ?? model.controller.state.statusText
+            )
+            Picker("Language", selection: Binding(get: { model.language }, set: { model.language = $0 })) {
+                ForEach(DictationLanguage.allCases, id: \.self) { language in
+                    Text(language.displayName).tag(language)
+                }
+            }
+            Text("Runs entirely on this Mac. Audio never leaves the device and is not saved. The one-time model download (about 1.6 GB, from Hugging Face, verified by SHA-256) is the only network use besides the optional update check.")
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func refresh() {
@@ -139,6 +183,39 @@ struct SettingsView: View {
         canListen = Permissions.canListenEvents
         loginItem = LoginItem.status
         model.retryHotkeyIfNeeded()
+    }
+}
+
+private enum SettingsCategory: String, CaseIterable, Identifiable, Hashable {
+    case shortcut
+    case general
+    case permissions
+    case model
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .shortcut: "Shortcut"
+        case .general: "General"
+        case .permissions: "Permissions"
+        case .model: "Model"
+        }
+    }
+}
+
+@MainActor
+private enum SettingsWindowSize {
+    static let width: CGFloat = 640
+    static let sidebarWidth: CGFloat = 168
+    /// Preferred content height: enough for the shortcut page, still inside a laptop display.
+    static let preferredHeight: CGFloat = 520
+    /// Kept clear so the title bar is not clipped by the menu bar or Dock.
+    static let screenMargin: CGFloat = 28
+
+    static var height: CGFloat {
+        let visible = NSScreen.main?.visibleFrame.height ?? (preferredHeight + screenMargin)
+        return min(preferredHeight, visible - screenMargin)
     }
 }
 

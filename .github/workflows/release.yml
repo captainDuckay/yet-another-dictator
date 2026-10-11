@@ -29,14 +29,9 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name || github.ref }}
 
-      # Runs before the model is restored, so the slow end-to-end Core ML test is skipped.
+      # The model isn't fetched here, so the slow end-to-end Core ML test is skipped.
       - name: Test
         run: swift test
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: Model
-          key: model-${{ hashFiles('scripts/model-manifest.txt') }}
 
       - name: Version
         id: version

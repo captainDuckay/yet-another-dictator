@@ -6,8 +6,8 @@ all under licenses compatible with that. This file is bundled in `Dictator.app/C
 | Component | Used for | License | Source |
 | --- | --- | --- | --- |
 | WhisperKit 1.1.1 | On-device speech recognition (Swift code linked into the app) | MIT, © 2024 argmax, inc. | https://github.com/argmaxinc/WhisperKit |
-| WhisperKit Core ML model `openai_whisper-large-v3-v20240930_turbo` | Bundled speech model (Core ML conversion) | MIT (argmax, inc.) | https://huggingface.co/argmaxinc/whisperkit-coreml |
-| Whisper Large v3 Turbo weights and tokenizer | The original model the conversion is made from; the tokenizer files are bundled as is | MIT, © 2022 OpenAI | https://huggingface.co/openai/whisper-large-v3-turbo, https://github.com/openai/whisper |
+| WhisperKit Core ML model `openai_whisper-large-v3-v20240930_turbo` | Speech model, downloaded on first launch (Core ML conversion) | MIT (argmax, inc.) | https://huggingface.co/argmaxinc/whisperkit-coreml |
+| Whisper Large v3 Turbo weights and tokenizer | The original model the conversion is made from; the tokenizer files are downloaded as is | MIT, © 2022 OpenAI | https://huggingface.co/openai/whisper-large-v3-turbo, https://github.com/openai/whisper |
 | DictationCore 0.1.0 | Shared dictation logic | MIT, © 2026 Nicki Skipper Otte | https://github.com/captains-chest/DictationCore |
 
 `swift-argument-parser` (Apache 2.0) appears in `Package.resolved` because WhisperKit's command-line

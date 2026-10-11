@@ -53,9 +53,13 @@ final class AppModel {
     private static let languageKey = "language"
     private static let log = Logger(subsystem: "com.captainduckay.dictator", category: "state")
 
+    /// First-launch model download (ADR 0004).
+    let modelDownload: ModelDownload
+
     init() {
-        let modelFolder = WhisperKitTranscriber.bundledModelFolder()
-            ?? URL(filePath: "/nonexistent", directoryHint: .isDirectory)
+        let modelDownload = ModelDownload()
+        self.modelDownload = modelDownload
+        let modelFolder = modelDownload.folder
         let recorder = MicrophoneRecorder()
         self.recorder = recorder
         let controller = DictationController(
@@ -125,7 +129,7 @@ final class AppModel {
         showWhatsNewIfUpdated()
         Task { await runDailyUpdateChecks() }
         resumeHotkey()
-        Task { await controller.loadModel() }
+        Task { await downloadAndLoadModel() }
         Task {
             if Permissions.microphone == .notDetermined {
                 _ = await Permissions.requestMicrophone()
@@ -133,6 +137,12 @@ final class AppModel {
             recorder.prepare()
             recorder.setKeepsReady(keepsMicrophoneReady)
         }
+    }
+
+    /// Downloads the model if needed (automatically, on first launch), then loads it.
+    func downloadAndLoadModel() async {
+        guard await modelDownload.ensureInstalled() else { return }
+        await controller.loadModel()
     }
 
     /// "Check for Updates…": checks now and always says what it found.

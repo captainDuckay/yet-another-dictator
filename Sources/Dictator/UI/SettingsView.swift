@@ -100,13 +100,16 @@ struct SettingsView: View {
             }
 
             Section("Model") {
-                LabeledContent("Whisper Large v3 Turbo", value: model.controller.state.statusText)
+                LabeledContent(
+                    "Whisper Large v3 Turbo",
+                    value: model.modelDownload.statusText ?? model.controller.state.statusText
+                )
                 Picker("Language", selection: Binding(get: { model.language }, set: { model.language = $0 })) {
                     ForEach(DictationLanguage.allCases, id: \.self) { language in
                         Text(language.displayName).tag(language)
                     }
                 }
-                Text("Runs entirely on this Mac. Audio never leaves the device and is not saved.")
+                Text("Runs entirely on this Mac. Audio never leaves the device and is not saved. The one-time model download (about 1.6 GB, from Hugging Face, verified by SHA-256) is the only network use besides the optional update check.")
                     .foregroundStyle(.secondary)
             }
         }

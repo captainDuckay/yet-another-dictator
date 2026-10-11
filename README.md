@@ -2,7 +2,9 @@
 
 Minimal, local-only dictation for macOS. Press a shortcut, talk, and the text is typed into
 whatever field has focus. Transcription runs on-device with **Whisper Large v3 Turbo** (WhisperKit
-Core ML), bundled inside the app.
+Core ML), downloaded once on first launch (about 1.6 GB) and verified against a SHA-256 manifest
+built into the app. Audio never leaves the device; the one-time model download is the only network
+use (besides the optional update check).
 
 - **Tap** the shortcut to start, tap again to stop.
 - **Hold** the shortcut to talk, release to finish.
@@ -22,7 +24,7 @@ That's the whole feature set. See [CHANGELOG.md](CHANGELOG.md) for what changed 
 ## Install
 
 1. Download `Dictator-<version>-macos-arm64.zip` from the
-   [latest release](https://github.com/captainDuckay/yet-another-dictator/releases) (optionally
+   [latest release](https://github.com/captains-chest/yet-another-dictator/releases) (optionally
    check it against the `.sha256` with `shasum -a 256 -c`).
 2. Unzip it and move `Dictator.app` to `/Applications`.
 3. Open it. Signed, notarized releases (v0.1.1 and later) open without a Gatekeeper warning.
@@ -35,13 +37,14 @@ That's the whole feature set. See [CHANGELOG.md](CHANGELOG.md) for what changed 
 Requires macOS 15+, Apple silicon, Xcode 26+ (Swift 6.2+).
 
 ```sh
-scripts/build-app.sh            # fetches + verifies the model, builds, signs → build/Dictator.app
+scripts/build-app.sh            # builds, signs → build/Dictator.app (no model inside)
 open build/Dictator.app
 ```
 
 First launch: grant **Microphone**, **Input Monitoring** (needed to detect the shortcut) and
-**Accessibility** (needed to type into other apps). The
-first model load specialises Core ML for your chip and can take a few minutes; later launches take
+**Accessibility** (needed to type into other apps). Dictator then downloads the model
+automatically (progress in the menu; it resumes after a quit or a dropped connection, and the menu
+offers Retry if it fails). The first model load specialises Core ML for your chip and can take a few minutes; later launches take
 about a second.
 
 For a stable signature (so macOS remembers permissions across rebuilds), sign with your own
@@ -96,15 +99,18 @@ flowchart LR
 
 ## Security
 
-- **Dictation is offline.** Audio and text never leave the Mac. WhisperKit is configured with
-  `download: false` and the tokenizer is bundled; the transcriber refuses to load if any required
-  file is missing (WhisperKit would otherwise fall back to downloading).
-- **One network request, and you can turn it off.** Once a day, `UpdateChecker` (the only network
-  code in the app) asks GitHub's public releases API whether a newer version exists, and the menu
+- **Audio never leaves the device; the one-time model download is the only network use** (plus the
+  optional update check below). On first launch `ModelInstaller` downloads the files listed in
+  `model-manifest.txt`, which ships inside the signed app and is never fetched from the network, from
+  immutable Hugging Face commits into `~/Library/Containers/com.captainduckay.dictator/Data/Library/Application Support/Models`
+  (excluded from backup). Every file must match its size and SHA-256 before it is used; a `.complete`
+  marker is written last. WhisperKit itself runs with `download: false` and a local tokenizer, and the
+  transcriber refuses to load if any required file is missing (ADR 0004).
+- **The update check, and you can turn it off.** Once a day, `UpdateChecker` asks GitHub's public releases API whether a newer version exists, and the menu
   offers to open the release page. Nothing is downloaded or installed, no token or user data is
   sent (ephemeral session), and Settings → General → *Check for updates daily* turns it off.
 - **Minimal entitlements:** App Sandbox + microphone + outgoing network connections (for the
-  update check only). Hardened runtime.
+  model download and the update check). Hardened runtime.
 - **No clipboard.** Text is typed via synthetic Unicode key events, so dictations never pass
   through the pasteboard (clipboard managers, other apps) and your clipboard is untouched.
 - **Output is sanitised:** single line only (newlines/tabs become spaces, so dictation can't press
@@ -129,10 +135,13 @@ flowchart LR
 
 - **WhisperKit:** bump `exact:` in `Package.swift`, review the upstream diff, `swift package resolve`,
   run `swift test`.
-- **Model:** regenerate `scripts/model-manifest.txt` against a new pinned commit, then delete
-  `Model/` and run `scripts/fetch-model.sh`.
+- **Model:** regenerate `scripts/model-manifest.txt` (`<model-id> <sha256> <bytes> <hf-path>
+  <local-path>`) against a new pinned commit, then delete `Model/` and run `scripts/fetch-model.sh`
+  for the end-to-end test. Installed apps download the new files on their next launch and delete
+  models no longer in the manifest. A second model (e.g. Dansk-only) is extra lines with its own
+  model-id.
 
 ## License
 
-MIT © 2026 Nicki Skipper Otte. See [LICENSE](LICENSE). Bundled third-party components (WhisperKit,
-the Whisper model) are credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+MIT © 2026 Nicki Skipper Otte. See [LICENSE](LICENSE). Third-party components (WhisperKit,
+the downloaded Whisper model) are credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

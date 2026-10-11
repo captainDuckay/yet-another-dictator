@@ -9,7 +9,7 @@ let package = Package(
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", exact: "1.1.1"),
         // Our own shared core (state machine, shortcut model, transcript cleanup), also used by the
         // iOS app. Pinned exactly like everything else.
-        .package(url: "https://github.com/captains-chest/DictationCore.git", exact: "0.1.0"),
+        .package(url: "https://github.com/captains-chest/DictationCore.git", exact: "0.2.0"),
     ],
     targets: [
         // The single seam where WhisperKit is used.

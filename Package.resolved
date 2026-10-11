@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/captains-chest/DictationCore.git",
       "state" : {
-        "revision" : "6d28e24d0ee518d957bb8acdf7931b0480dfa17d",
-        "version" : "0.1.0"
+        "revision" : "793975be62dd781ac7aa2e990e360935cce685cf",
+        "version" : "0.2.0"
       }
     },
     {

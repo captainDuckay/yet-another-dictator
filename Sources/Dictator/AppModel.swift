@@ -61,7 +61,8 @@ final class AppModel {
         let controller = DictationController(
             recorder: recorder,
             transcriber: WhisperKitTranscriber(modelFolder: modelFolder),
-            inserter: KeystrokeTextInserter()
+            inserter: KeystrokeTextInserter(),
+            precedingText: FocusedTextReader()
         )
         self.controller = controller
         self.overlay = OverlayPanel(controller: controller)
@@ -108,7 +109,6 @@ final class AppModel {
         ) { _ in
             MainActor.assumeIsolated { controller.noteOtherInput() }
         }
-        controller.textBeforeCursor = { FocusedText.textBeforeCursor() }
 
         Task {
             // Another copy already running owns the keyboard tap; quit before installing ours.

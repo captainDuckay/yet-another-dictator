@@ -4,6 +4,10 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 
 ## [Unreleased]
 
+### Changed
+- The speech model is no longer inside the app, so the download is about 1.6 GB smaller. On first launch (and after updating to this version) Dictator downloads the model once, automatically, with progress in the menu. It resumes after a quit or a dropped connection, and the menu offers Retry if it fails. Every file is checked against a SHA-256 list built into the signed app. Audio never leaves the Mac; the one-time model download is the only network use besides the optional update check.
+- The update check now asks GitHub about the new home of the project, captains-chest/yet-another-dictator. Earlier versions keep working through GitHub's redirect.
+
 ## [0.1.2] - 2026-10-10
 
 ### Fixed

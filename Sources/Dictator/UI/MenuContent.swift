@@ -6,7 +6,14 @@ struct MenuContent: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Text(model.controller.state.statusText)
+        if let download = model.modelDownload.statusText {
+            Text(download)
+            if case .failed = model.modelDownload.status {
+                Button("Retry Model Download") { Task { await model.downloadAndLoadModel() } }
+            }
+        } else {
+            Text(model.controller.state.statusText)
+        }
         Text("Shortcut: \(model.shortcut.displayString)")
         if let error = model.controller.lastError {
             Text(error)

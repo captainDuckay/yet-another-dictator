@@ -134,5 +134,5 @@ flowchart LR
 
 ## License
 
-MIT © 2026 Nicki Skipper Otte. See [LICENSE](LICENSE). Bundled third-party components (WhisperKit,
+MIT © 2026 CaptainDuckay. See [LICENSE](LICENSE). Bundled third-party components (WhisperKit,
 the Whisper model) are credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

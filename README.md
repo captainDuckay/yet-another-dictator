@@ -22,7 +22,7 @@ That's the whole feature set. See [CHANGELOG.md](CHANGELOG.md) for what changed 
 ## Install
 
 1. Download `Dictator-<version>-macos-arm64.zip` from the
-   [latest release](https://github.com/captainDuckay/yet-another-dictator/releases) (optionally
+   [latest release](https://github.com/captains-chest/yet-another-dictator/releases) (optionally
    check it against the `.sha256` with `shasum -a 256 -c`).
 2. Unzip it and move `Dictator.app` to `/Applications`.
 3. Open it. Signed, notarized releases (v0.1.1 and later) open without a Gatekeeper warning.

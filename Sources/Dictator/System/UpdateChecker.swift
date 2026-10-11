@@ -7,7 +7,7 @@ import Foundation
 /// the browser. The request carries no token, cookies or user data (an ephemeral session with a
 /// fixed User-Agent), so GitHub sees only the IP address and that a Dictator asked.
 struct UpdateChecker: Sendable {
-    static let releasesURL = URL(string: "https://api.github.com/repos/captainDuckay/yet-another-dictator/releases?per_page=30")!
+    static let releasesURL = URL(string: "https://api.github.com/repos/captains-chest/yet-another-dictator/releases?per_page=30")!
 
     enum Failure: LocalizedError {
         case badResponse(Int)

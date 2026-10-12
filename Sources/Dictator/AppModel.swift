@@ -57,7 +57,7 @@ final class AppModel {
     let modelDownload: ModelDownload
 
     init() {
-        let modelDownload = ModelDownload()
+        let modelDownload = ModelDownload(transport: RangedTransport())
         self.modelDownload = modelDownload
         let modelFolder = modelDownload.folder
         let recorder = MicrophoneRecorder()

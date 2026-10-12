@@ -4,6 +4,8 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-12
+
 ### Fixed
 - Settings fit on the screen. Categories sit in a sidebar, and the selected page scrolls instead of making the window taller than the display.
 

@@ -27,6 +27,8 @@ let package = Package(
             dependencies: [.product(name: "DictationCore", package: "DictationCore"), "WhisperTranscription"]
         ),
 
+        // App-level logic with injected fakes (e.g. keystroke pacing, issue #43).
+        .testTarget(name: "DictatorTests", dependencies: [.product(name: "DictationCore", package: "DictationCore"), "Dictator"]),
         .testTarget(name: "WhisperTranscriptionTests", dependencies: [.product(name: "DictationCore", package: "DictationCore"), "WhisperTranscription"]),
     ]
 )

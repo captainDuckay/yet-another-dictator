@@ -6,7 +6,7 @@ Feature tiers (CaptainDuckay's rules):
 - **Need-to-have** (build): language choice, launch at login, undo last dictation.
 - **Nice-to-have** (CaptainDuckay decides — do not build): live preview, personal vocabulary, sounds, history, cloud models, AI rewriting, per-app profiles.
 
-Offline only (update check may use network). No clipboard. Minimal entitlements. Exact version pins in `Package.swift`.
+Offline only (the optional update check, and installing an update, may use the network). No clipboard. Minimal entitlements. Exact version pins in `Package.swift`.
 
 ## Ops / Dependabot notes
 

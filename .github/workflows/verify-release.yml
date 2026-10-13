@@ -36,6 +36,12 @@ jobs:
           xattr -w com.apple.quarantine "0081;$(printf '%x' "$(date +%s)");Safari;" "$zip"
           ditto -x -k "$zip" .
           codesign --verify --strict --deep --verbose=2 Dictator.app
+          codesign --verify --strict Dictator.app/Contents/XPCServices/DictatorUpdater.xpc
+          xpc_entitlements="$(codesign -d --entitlements - Dictator.app/Contents/XPCServices/DictatorUpdater.xpc 2>/dev/null || true)"
+          if grep -q 'com.apple.security.app-sandbox' <<<"$xpc_entitlements"; then
+            echo "DictatorUpdater.xpc must not be sandboxed"
+            exit 1
+          fi
           spctl -a -vvv -t exec Dictator.app
           xcrun stapler validate Dictator.app
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Dictator.app/Contents/Info.plist

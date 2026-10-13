@@ -4,6 +4,9 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 
 ## [Unreleased]
 
+### Added
+- Updates install from the menu. Choose Install Update and Dictator downloads the release, checks its published checksum and Apple signature, replaces itself and relaunches. Until you are on this version, update once from the release page; after that the menu does it. The daily check still downloads nothing until you choose to install, and you can turn it off.
+
 ### Fixed
 - Changing the dictation shortcut to the keys of the Undo Last Dictation shortcut no longer loses the undo shortcut when the new shortcut can't be registered. Both shortcuts stay as they were, and Settings shows why the change failed.
 - Recording an empty dictation shortcut now keeps the "Press at least one key." hint visible instead of clearing it right away.

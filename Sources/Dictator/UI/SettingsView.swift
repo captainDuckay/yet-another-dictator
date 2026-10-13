@@ -93,11 +93,11 @@ struct SettingsView: View {
                 Text(loginItemError).foregroundStyle(.red)
             }
             Toggle(isOn: Binding(
-                get: { model.checksForUpdates },
-                set: { model.checksForUpdates = $0 }
+                get: { model.updates.checksForUpdates },
+                set: { model.updates.checksForUpdates = $0 }
             )) {
                 Text("Check for updates daily")
-                Text("Asks GitHub whether a newer version exists. Nothing is downloaded or installed, and dictation never uses the network.")
+                Text("Asks GitHub whether a newer version exists. Nothing is downloaded until you choose Install Update. Dictation never uses the network.")
             }
             Toggle(isOn: Binding(
                 get: { model.keepsMicrophoneReady },
@@ -172,7 +172,7 @@ struct SettingsView: View {
                     Text(language.displayName).tag(language)
                 }
             }
-            Text("Runs entirely on this Mac. Audio never leaves the device and is not saved. The one-time model download (about 1.6 GB, from Hugging Face, verified by SHA-256) is the only network use besides the optional update check.")
+            Text("Runs entirely on this Mac. Audio never leaves the device and is not saved. The one-time model download (about 1.6 GB, from Hugging Face, verified by SHA-256) is the only network use besides the optional update check and, when you install one, the update itself.")
                 .foregroundStyle(.secondary)
         }
     }

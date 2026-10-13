@@ -18,8 +18,10 @@ Until v0.1.0, releases were ad-hoc signed and not notarized. That had two costs:
 - The Release workflow signs `Dictator.app` with the **Developer ID Application** identity of team
   55GY5DC584, using hardened runtime (`--options runtime`), a secure timestamp and the existing
   sandbox entitlements. No new entitlements are needed.
-- Only the app is signed, without `--deep`: the executable is statically linked (no frameworks,
-  dylibs or helpers), and the Core ML `.mlmodelc` folders are data, sealed by the app's signature.
+- Only the app is signed, without `--deep`: the executable is statically linked (no frameworks
+  or dylibs), and the Core ML `.mlmodelc` folders are data, sealed by the app's signature.
+  Amended by ADR 0005: the app also embeds `DictatorUpdater.xpc`, signed inside-out, with no
+  third-party frameworks.
 - It is **notarized** with `notarytool` using an App Store Connect API key, then **stapled**, so
   Gatekeeper accepts it offline. It is verified with `codesign --verify --strict --deep`,
   `spctl -a -t exec` and `stapler validate`, also on the app unzipped from the final archive.

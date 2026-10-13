@@ -20,6 +20,8 @@ use (besides the optional update check).
 - Optional: open at login, keep the microphone ready (catches the first word), daily update check.
 
 That's the whole feature set. See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+Website: [captains-chest.com/dictator](https://captains-chest.com/dictator) · privacy policy:
+[captains-chest.com/dictator/privacy](https://captains-chest.com/dictator/privacy).
 
 ## Install
 

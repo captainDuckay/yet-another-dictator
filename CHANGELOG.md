@@ -4,6 +4,10 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 
 ## [Unreleased]
 
+### Fixed
+- Changing the dictation shortcut to the keys of the Undo Last Dictation shortcut no longer loses the undo shortcut when the new shortcut can't be registered. Both shortcuts stay as they were, and Settings shows why the change failed.
+- Recording an empty dictation shortcut now keeps the "Press at least one key." hint visible instead of clearing it right away.
+
 ## [0.1.4] - 2026-10-13
 
 ### Fixed

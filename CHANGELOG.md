@@ -8,6 +8,7 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 - Switching speech models back and forth while one downloads no longer starts a second download of the same model.
 - Settings no longer offers Delete for the model still in use while another one downloads.
 - Cancelling or timing out a dictation now stops transcription the same way for both speech models.
+- Dictations longer than 30 seconds no longer lose words. Long recordings are now cut at a pause, and no piece is too short to be transcribed.
 
 ### Changed
 - Dictator is English-only. The Dansk language option is removed; Whisper offers Automatic or English. Parakeet remains English only.

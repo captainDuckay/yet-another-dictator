@@ -21,14 +21,38 @@ let package = Package(
             ]
         ),
 
+        // Release lookup, signature policy and the replace step. Shared with the updater so the
+        // unsandboxed helper checks the same facts the app does.
+        .target(
+            name: "AppUpdate",
+            dependencies: [.product(name: "DictationCore", package: "DictationCore")]
+        ),
+
         // macOS app: hotkey, microphone, text insertion, menu bar, overlay, settings.
         .executableTarget(
             name: "Dictator",
-            dependencies: [.product(name: "DictationCore", package: "DictationCore"), "WhisperTranscription"]
+            dependencies: [
+                .product(name: "DictationCore", package: "DictationCore"),
+                "WhisperTranscription",
+                "AppUpdate",
+            ]
+        ),
+
+        // Unsandboxed XPC service embedded in the app. Replaces Dictator.app and nothing else.
+        .executableTarget(
+            name: "DictatorUpdater",
+            dependencies: ["AppUpdate"]
         ),
 
         // App-level logic with injected fakes (e.g. keystroke pacing, issue #43).
-        .testTarget(name: "DictatorTests", dependencies: [.product(name: "DictationCore", package: "DictationCore"), "Dictator"]),
+        .testTarget(
+            name: "DictatorTests",
+            dependencies: [
+                .product(name: "DictationCore", package: "DictationCore"),
+                "Dictator",
+                "AppUpdate",
+            ]
+        ),
         .testTarget(name: "WhisperTranscriptionTests", dependencies: [.product(name: "DictationCore", package: "DictationCore"), "WhisperTranscription"]),
     ]
 )

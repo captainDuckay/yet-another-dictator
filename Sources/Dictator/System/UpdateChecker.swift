@@ -1,11 +1,12 @@
+import AppUpdate
 import DictationCore
 import Foundation
 
-/// The app's only network code: asks GitHub's public releases API whether a newer Dictator exists.
+/// Asks GitHub's public releases API whether a newer Dictator exists.
 ///
-/// Check and notify only: nothing is downloaded or installed, the user opens the release page in
-/// the browser. The request carries no token, cookies or user data (an ephemeral session with a
-/// fixed User-Agent), so GitHub sees only the IP address and that a Dictator asked.
+/// The request carries no token, cookies or user data (an ephemeral session with a fixed
+/// User-Agent), so GitHub sees only the IP address and that a Dictator asked. The archive itself
+/// is downloaded later, and only after the user chooses Install Update.
 struct UpdateChecker: Sendable {
     static let releasesURL = URL(string: "https://api.github.com/repos/captains-chest/yet-another-dictator/releases?per_page=30")!
 
@@ -18,7 +19,7 @@ struct UpdateChecker: Sendable {
         }
     }
 
-    func newestRelease(above current: AppVersion) async throws -> AvailableUpdate? {
+    func newestRelease(above current: AppVersion) async throws -> OfferedUpdate? {
         var request = URLRequest(url: Self.releasesURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
@@ -28,7 +29,7 @@ struct UpdateChecker: Sendable {
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else { throw Failure.badResponse(status) }
-        let releases = try JSONDecoder().decode([ReleaseInfo].self, from: data)
-        return UpdateCheck.newest(in: releases, current: current)
+        let releases = try JSONDecoder().decode([GitHubRelease].self, from: data)
+        return OfferedUpdate.newest(in: releases, current: current)
     }
 }

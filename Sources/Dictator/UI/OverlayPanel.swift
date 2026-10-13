@@ -45,6 +45,14 @@ final class OverlayPanel {
         }
     }
 
+    /// Stays up until the next `flash` or `present`. Used while an update downloads.
+    func present(_ message: String) {
+        hideNotice?.cancel()
+        notice.text = message
+        notice.isInfo = true
+        show()
+    }
+
     /// Shows `message` for a few seconds, e.g. why dictation couldn't start or type.
     func flash(_ message: String, isInfo: Bool = false) {
         notice.text = message

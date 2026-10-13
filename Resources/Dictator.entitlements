@@ -2,8 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Sandboxed. Outbound connections are allowed only for the optional update check
-         (UpdateChecker, GitHub's public releases API); no inbound connections. -->
+    <!-- Sandboxed. Outbound connections are allowed for the one-time model download and for
+         updates (GitHub's releases API, and the release archive when you install one). No inbound
+         connections. Replacing the app is done by the unsandboxed updater XPC (ADR 0005). -->
     <key>com.apple.security.app-sandbox</key>
     <true/>
     <key>com.apple.security.device.audio-input</key>

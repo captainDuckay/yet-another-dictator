@@ -42,13 +42,29 @@ struct MenuContent: View {
             Button("Discard") { model.controller.discardUndelivered() }
         }
         Divider()
-        if let update = model.availableUpdate {
-            Button("Update Available: v\(update.version.description)…") { model.openUpdatePage() }
+        if let update = model.updates.available {
+            switch model.updates.phase {
+            case .idle:
+                if update.canInstall {
+                    Button("Install Update v\(update.version.description)…") { model.updates.install() }
+                } else {
+                    Button("Download Update v\(update.version.description)…") { model.updates.openReleasePage() }
+                }
+            case .downloading(let fraction):
+                Text("Downloading update… \(Int((fraction * 100).rounded()))%")
+            case .checking:
+                Text("Checking update…")
+            case .installing:
+                Text("Installing update…")
+            case .failed(let message):
+                Text(message)
+                Button("Try Update Again") { model.updates.install() }
+            }
         }
-        Button(model.isCheckingForUpdates ? "Checking for Updates…" : "Check for Updates…") {
-            model.checkForUpdatesNow()
+        Button(model.updates.isChecking ? "Checking for Updates…" : "Check for Updates…") {
+            model.updates.checkNow()
         }
-        .disabled(model.isCheckingForUpdates)
+        .disabled(model.updates.isChecking || !model.updates.phase.allowsCheck)
         Button("What's New") { model.showWhatsNew() }
         Button("Settings…") {
             NSApp.activate()

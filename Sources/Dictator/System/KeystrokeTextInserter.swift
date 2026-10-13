@@ -34,17 +34,20 @@ final class KeystrokeTextInserter: TextInserting {
     static let defaultInterval: Duration = .milliseconds(4)
 
     private let canPost: @MainActor () -> Bool
+    private let requestPost: @MainActor () -> Void
     private let post: @MainActor (Keystroke) throws -> Void
     private let sleep: @MainActor (Duration) async throws -> Void
     private let interval: Duration
 
     init(
         canPost: @escaping @MainActor () -> Bool = { Permissions.canPostEvents },
+        requestPost: @escaping @MainActor () -> Void = { Permissions.requestPostEvents() },
         post: @escaping @MainActor (Keystroke) throws -> Void = KeystrokeTextInserter.postEvents,
         sleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         interval: Duration = KeystrokeTextInserter.defaultInterval
     ) {
         self.canPost = canPost
+        self.requestPost = requestPost
         self.post = post
         self.sleep = sleep
         self.interval = interval
@@ -52,7 +55,7 @@ final class KeystrokeTextInserter: TextInserting {
 
     func preflight() throws {
         guard canPost() else {
-            Permissions.requestPostEvents()
+            requestPost()
             throw Failure.notPermitted
         }
     }

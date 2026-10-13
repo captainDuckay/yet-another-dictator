@@ -9,13 +9,13 @@ import WhisperTranscription
 @Observable
 final class AppModel {
     let controller: DictationController
-    private(set) var shortcut: Shortcut
-    /// Optional global shortcut for "Undo Last Dictation".
-    private(set) var undoShortcut: Shortcut?
-    private(set) var undoShortcutError: String?
-    private(set) var shortcutError: String?
-    /// How the shortcut is being watched; nil until the hotkey was registered once.
-    private(set) var hotkeyMode: EventTapHotkey.Mode?
+    /// Dictation and undo shortcuts (registration, storage, errors).
+    let shortcuts: ShortcutSettings
+    var shortcut: Shortcut { shortcuts.shortcut }
+    var undoShortcut: Shortcut? { shortcuts.undoShortcut }
+    var undoShortcutError: String? { shortcuts.undoShortcutError }
+    var shortcutError: String? { shortcuts.shortcutError }
+    var hotkeyMode: EventTapHotkey.Mode? { shortcuts.hotkeyMode }
 
     /// Keep the microphone running between dictations so the first syllable is never cut off.
     var keepsMicrophoneReady: Bool {
@@ -26,7 +26,7 @@ final class AppModel {
     }
 
     @ObservationIgnored private let recorder: MicrophoneRecorder
-    @ObservationIgnored private let hotkey = EventTapHotkey()
+    @ObservationIgnored private let hotkey: EventTapHotkey
     @ObservationIgnored private let whatsNew = WhatsNewWindow()
     @ObservationIgnored private let updateChecker = UpdateChecker()
 
@@ -39,17 +39,12 @@ final class AppModel {
     }
     @ObservationIgnored private let overlay: OverlayPanel
     @ObservationIgnored private let defaults = UserDefaults.standard
-    @ObservationIgnored private var isSuspended = false
     @ObservationIgnored private var isMenuOpen = false
-    /// False until this copy is confirmed to be the only one running.
-    @ObservationIgnored private var isStarted = false
-    private static let shortcutKey = "shortcut"
     private static let lastSeenVersionKey = "lastSeenVersion"
     private static let checksForUpdatesKey = "checkForUpdates"
     private static let lastUpdateCheckKey = "lastUpdateCheck"
     private static let notifiedUpdateKey = "notifiedUpdateVersion"
     private static let keepsMicrophoneReadyKey = "keepMicrophoneReady"
-    private static let undoShortcutKey = "undoShortcut"
     private static let languageKey = "language"
     private static let log = Logger(subsystem: "com.captainduckay.dictator", category: "state")
 
@@ -70,10 +65,11 @@ final class AppModel {
         )
         self.controller = controller
         self.overlay = OverlayPanel(controller: controller)
-        self.shortcut = Self.loadShortcut(from: defaults)
+        let hotkey = EventTapHotkey()
+        self.hotkey = hotkey
+        self.shortcuts = ShortcutSettings(hotkey: hotkey, defaults: .standard)
         self.checksForUpdates = defaults.object(forKey: Self.checksForUpdatesKey) as? Bool ?? true
         self.keepsMicrophoneReady = defaults.bool(forKey: Self.keepsMicrophoneReadyKey)
-        self.undoShortcut = Self.loadShortcut(from: defaults, key: Self.undoShortcutKey)
         controller.language = DictationLanguage(storedValue: defaults.string(forKey: Self.languageKey))
 
         let log = Self.log
@@ -135,10 +131,9 @@ final class AppModel {
     }
 
     private func start() {
-        isStarted = true
         showWhatsNewIfUpdated()
         Task { await runDailyUpdateChecks() }
-        resumeHotkey()
+        shortcuts.start()
         Task { await downloadAndLoadModel() }
         Task {
             if Permissions.microphone == .notDetermined {
@@ -224,46 +219,9 @@ final class AppModel {
         }
     }
 
-    func setShortcut(_ new: Shortcut) {
-        isSuspended = false
-        do {
-            try new.validate()
-            // A dictation shortcut that takes over the undo shortcut's keys removes the undo one.
-            if new.codes == undoShortcut?.codes { clearUndoShortcut() }
-            try hotkey.register(new, undo: undoShortcut)
-            noteHotkeyMode()
-            shortcut = new
-            shortcutError = nil
-            defaults.set(try JSONEncoder().encode(new), forKey: Self.shortcutKey)
-        } catch Shortcut.ValidationError.empty {
-            shortcutError = "Press at least one key."
-            resumeHotkey()
-        } catch {
-            shortcutError = String(describing: error)
-            resumeHotkey()
-        }
-    }
-
-    func setUndoShortcut(_ new: Shortcut) {
-        isSuspended = false
-        if new.keys.isEmpty {
-            undoShortcutError = "Press at least one key."
-        } else if new.codes == shortcut.codes {
-            undoShortcutError = "That's the dictation shortcut."
-        } else {
-            undoShortcut = new
-            undoShortcutError = nil
-            if let data = try? JSONEncoder().encode(new) { defaults.set(data, forKey: Self.undoShortcutKey) }
-        }
-        resumeHotkey()
-    }
-
-    func clearUndoShortcut() {
-        undoShortcut = nil
-        undoShortcutError = nil
-        defaults.removeObject(forKey: Self.undoShortcutKey)
-        if hotkey.isRegistered { resumeHotkey() }
-    }
+    func setShortcut(_ new: Shortcut) { shortcuts.setShortcut(new) }
+    func setUndoShortcut(_ new: Shortcut) { shortcuts.setUndoShortcut(new) }
+    func clearUndoShortcut() { shortcuts.clearUndoShortcut() }
 
     var language: DictationLanguage {
         get { controller.language }
@@ -274,44 +232,8 @@ final class AppModel {
     }
 
     /// Unregisters the global shortcut while the user records a new one.
-    func suspendHotkey() {
-        isSuspended = true
-        hotkey.unregister()
-    }
-
-    func resumeHotkey() {
-        isSuspended = false
-        do {
-            try hotkey.register(shortcut, undo: undoShortcut)
-            noteHotkeyMode()
-            shortcutError = nil
-        } catch {
-            shortcutError = String(describing: error)
-        }
-    }
-
-    private func noteHotkeyMode() {
-        guard hotkeyMode != hotkey.mode else { return }
-        hotkeyMode = hotkey.mode
-        let mode = hotkey.mode.map { "\($0)" } ?? "none"
-        Self.log.notice("hotkey tap: \(mode, privacy: .public)")
-    }
-
+    func suspendHotkey() { shortcuts.suspendHotkey() }
+    func resumeHotkey() { shortcuts.resumeHotkey() }
     /// Retries registration, e.g. after the user granted Input Monitoring.
-    func retryHotkeyIfNeeded() {
-        if isStarted, !hotkey.isRegistered, !isSuspended { resumeHotkey() }
-    }
-
-    private static func loadShortcut(from defaults: UserDefaults) -> Shortcut {
-        loadShortcut(from: defaults, key: shortcutKey) ?? .default
-    }
-
-    private static func loadShortcut(from defaults: UserDefaults, key: String) -> Shortcut? {
-        guard
-            let data = defaults.data(forKey: key),
-            let stored = try? JSONDecoder().decode(Shortcut.self, from: data),
-            (try? stored.validate()) != nil
-        else { return nil }
-        return stored
-    }
+    func retryHotkeyIfNeeded() { shortcuts.retryHotkeyIfNeeded() }
 }

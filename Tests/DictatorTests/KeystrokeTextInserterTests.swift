@@ -63,4 +63,16 @@ struct KeystrokeTextInserterTests {
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(recorder.events.count == 2)
     }
+
+    @Test func insertWithoutAccessibilityThrowsAndAsksOnce() async {
+        let recorder = Recorder()
+        let inserter = KeystrokeTextInserter(
+            canPost: { false },
+            requestPost: { recorder.events.append("request") },
+            post: { _ in recorder.events.append("post") },
+            sleep: { _ in }
+        )
+        await #expect(throws: KeystrokeTextInserter.Failure.notPermitted) { try await inserter.insert("hello") }
+        #expect(recorder.events == ["request"])
+    }
 }

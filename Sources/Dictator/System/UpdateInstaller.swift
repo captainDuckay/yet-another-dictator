@@ -23,7 +23,8 @@ enum UpdateInstaller {
         guard let zipURL = update.zipURL, let checksumURL = update.checksumURL else { throw UpdateInstallError.archive }
         let work = FileManager.default.temporaryDirectory.appending(path: "dictator-update-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: work) }
+        var keepsWork = false
+        defer { if !keepsWork { try? FileManager.default.removeItem(at: work) } }
 
         progress(.downloading(0))
         let checksumFile = work.appending(path: "checksum.txt")
@@ -55,8 +56,16 @@ enum UpdateInstaller {
         }
 
         progress(.installing)
-        if let message = await UpdateClient.install(stagedApp: app) {
+        switch await UpdateClient.install(stagedApp: app) {
+        case .replied(nil):
+            return
+        case .replied(let message?):
             throw UpdateInstallError.rejected(message)
+        case .timedOut:
+            if AppIdentity.read(from: Bundle.main.bundleURL).version == update.version { return }
+            // The updater may still be reading the staged app. The system clears temp files later.
+            keepsWork = true
+            throw UpdateInstallError.rejected("The update didn't finish. If Dictator was replaced, quit it and open it again.")
         }
     }
 

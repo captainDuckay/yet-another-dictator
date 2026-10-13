@@ -7,6 +7,11 @@ public enum AppReplacer {
         guard let staged = realApp(stagedApp), let destination = realApp(destination), staged != destination else {
             return "The download wasn't a Dictator app."
         }
+        // Replacing would delete the running copy first, since the backup lands on this path.
+        let backup = destination.deletingLastPathComponent().appending(path: DictatorIdentity.previousCopyName)
+        if destination.lastPathComponent == DictatorIdentity.previousCopyName || isSame(backup, destination) {
+            return "This is the previous copy of Dictator. Quit it, open Dictator.app instead, and try again."
+        }
         let destinationIdentity = AppIdentity.read(from: destination)
         let trust = SignedApp.trust(at: staged)
         if let refusal = InstallPolicy.signatureRefusal(trust)
@@ -18,7 +23,6 @@ public enum AppReplacer {
         stripQuarantine(staged)
         guard Gatekeeper.accepts(staged) else { return InstallPolicy.untrusted }
 
-        let backup = destination.deletingLastPathComponent().appending(path: DictatorIdentity.previousCopyName)
         if FileManager.default.fileExists(atPath: backup.path) {
             guard canDelete(backup) else {
                 return "Move \(DictatorIdentity.previousCopyName) out of the way and try again."
@@ -64,7 +68,8 @@ public enum AppReplacer {
         guard let app = realApp(app) else { return nil }
         let previous = app.deletingLastPathComponent().appending(path: DictatorIdentity.previousCopyName)
         guard FileManager.default.fileExists(atPath: previous.path) else { return nil }
-        guard canDelete(previous) else { return nil }
+        // Running from the previous copy itself, e.g. opened from Spotlight.
+        guard !isSame(previous, app), canDelete(previous) else { return nil }
         do {
             try FileManager.default.removeItem(at: previous)
             return nil
@@ -76,6 +81,18 @@ public enum AppReplacer {
     private static func canDelete(_ url: URL) -> Bool {
         guard (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink != true else { return false }
         return AppIdentity.read(from: url).bundleIdentifier == DictatorIdentity.bundleIdentifier
+    }
+
+    /// Compares file identity too, so another spelling on a case-insensitive volume still matches.
+    private static func isSame(_ left: URL, _ right: URL) -> Bool {
+        if left.standardizedFileURL.resolvingSymlinksInPath().path == right.standardizedFileURL.resolvingSymlinksInPath().path {
+            return true
+        }
+        let key = URLResourceKey.fileResourceIdentifierKey
+        guard let a = try? left.resourceValues(forKeys: [key]).fileResourceIdentifier,
+              let b = try? right.resourceValues(forKeys: [key]).fileResourceIdentifier
+        else { return false }
+        return a.isEqual(b)
     }
 
     /// A real `.app` directory, not a symlink. Intermediate symlinks (such as `/tmp`) are resolved

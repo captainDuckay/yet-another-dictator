@@ -50,7 +50,9 @@ final class UpdateController {
             fail(.translocated)
             return
         }
+        // Set before the task starts so a second Install or a check is refused right away.
         lastPercent = -1
+        apply(.downloading(0))
         let update = available
         let report: @Sendable (UpdatePhase) -> Void = { [weak self] phase in
             Task { @MainActor in self?.apply(phase) }
@@ -90,6 +92,7 @@ final class UpdateController {
 
     private func fail(_ error: UpdateInstallError) {
         phase = .failed(error.message)
+        overlay.present(nil)
         overlay.flash(error.message)
         Self.log.error("\(error.message, privacy: .public)")
     }

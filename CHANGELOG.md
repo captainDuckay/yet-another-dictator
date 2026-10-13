@@ -4,6 +4,8 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-13
+
 ### Fixed
 - Long dictations could come out with a piece of text moved to the end (for example "…logos toe can showcase … take. be on the card so w"). Dictator typed the text as a fast burst of small key events, and one could arrive after the ones behind it. It now types them one after another with a tiny pause, so the text arrives complete and in order (#43).
 

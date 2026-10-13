@@ -9,12 +9,16 @@ final class OverlayPanel {
     private let panel: NSPanel
     private let notice = Notice()
     private var hideNotice: Task<Void, Never>?
+    private var isDictating = false
 
-    /// A short message shown in place of the listening/transcribing pill.
+    /// Messages shown while not dictating. Listening/transcribing always covers both.
     @Observable final class Notice {
-        var text: String?
-        /// Informational notices (e.g. an update) instead of a warning.
-        var isInfo = false
+        /// Timed, e.g. why dictation couldn't start or type.
+        var flash: String?
+        /// Informational flashes (e.g. an update) instead of a warning.
+        var flashIsInfo = false
+        /// Sticky update progress or result. Shown whenever no flash covers it.
+        var status: String?
     }
 
     init(controller: DictationController) {
@@ -38,31 +42,38 @@ final class OverlayPanel {
         switch state {
         case .recording, .transcribing:
             hideNotice?.cancel()
-            notice.text = nil
-            show()
+            notice.flash = nil
+            isDictating = true
         case .ready, .loadingModel, .unavailable:
-            if notice.text == nil { panel.orderOut(nil) }
+            isDictating = false
         }
+        refresh()
     }
 
-    /// Stays up until the next `flash` or `present`. Used while an update downloads.
-    func present(_ message: String) {
-        hideNotice?.cancel()
-        notice.text = message
-        notice.isInfo = true
-        show()
+    /// Stays up until replaced or cleared with nil. Used while an update downloads and installs.
+    func present(_ status: String?) {
+        notice.status = status
+        refresh()
     }
 
     /// Shows `message` for a few seconds, e.g. why dictation couldn't start or type.
     func flash(_ message: String, isInfo: Bool = false) {
-        notice.text = message
-        notice.isInfo = isInfo
-        show()
+        notice.flash = message
+        notice.flashIsInfo = isInfo
+        refresh()
         hideNotice?.cancel()
         hideNotice = Task { [weak self] in
             try? await Task.sleep(for: .seconds(4))
             guard let self, !Task.isCancelled else { return }
-            notice.text = nil
+            notice.flash = nil
+            refresh()
+        }
+    }
+
+    private func refresh() {
+        if isDictating || notice.flash != nil || notice.status != nil {
+            show()
+        } else {
             panel.orderOut(nil)
         }
     }
@@ -89,6 +100,10 @@ private struct OverlayView: View {
     let controller: DictationController
     let notice: OverlayPanel.Notice
 
+    private var isDictating: Bool {
+        controller.state == .recording || controller.state == .transcribing
+    }
+
     var body: some View {
         // The panel is transparent outside the pill; the pill sizes to its content.
         pill
@@ -97,8 +112,8 @@ private struct OverlayView: View {
 
     private var pill: some View {
         HStack(spacing: 10) {
-            if let text = notice.text {
-                if notice.isInfo {
+            if !isDictating, let text = notice.flash ?? notice.status {
+                if notice.flash == nil || notice.flashIsInfo {
                     Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
                 } else {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)

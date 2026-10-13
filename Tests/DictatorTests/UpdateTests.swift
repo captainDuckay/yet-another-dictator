@@ -196,6 +196,24 @@ struct UpdateTests {
         #expect(FileManager.default.fileExists(atPath: foreign.path))
     }
 
+    @Test func runningFromThePreviousCopyKeepsIt() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "dictator-previous-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let running = try fakeApp(named: DictatorIdentity.previousCopyName, version: "0.1.4", in: root)
+        let staged = try fakeApp(named: "Staged.app", version: "0.2.0", in: root.appending(path: "staged", directoryHint: .isDirectory))
+        let marker = running.appending(path: "Contents/keep.txt")
+        try Data("keep".utf8).write(to: marker)
+
+        #expect(AppReplacer.removePreviousCopy(beside: running) == nil)
+        #expect(try String(contentsOf: marker, encoding: .utf8) == "keep")
+
+        let message = AppReplacer.install(stagedApp: staged, replacing: running)
+        #expect(message?.contains("Dictator.app") == true)
+        #expect(try String(contentsOf: marker, encoding: .utf8) == "keep")
+        #expect(AppIdentity.read(from: running).version == AppVersion("0.1.4"))
+    }
+
     @Test func hostApplicationIsThreeLevelsAboveTheXPC() {
         let xpc = URL(fileURLWithPath: "/Applications/Dictator.app/Contents/XPCServices/DictatorUpdater.xpc")
         #expect(AppBundleLocation.hostApplication(containingXPC: xpc)?.path == "/Applications/Dictator.app")

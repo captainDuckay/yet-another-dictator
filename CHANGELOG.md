@@ -5,6 +5,8 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 ## [Unreleased]
 
 ### Added
+- A second, faster and more accurate speech model for English: NVIDIA Parakeet TDT 0.6B v2 (about 464 MB). Whisper Large v3 Turbo stays available, and is still the one to use for Dansk.
+- Dictator no longer downloads a model on its own. On first launch it asks which model to download, best first, with the size, accuracy and speed of each. Copies that already downloaded Whisper keep using it without being asked. Switch models any time in Settings → Model, which downloads the new one on demand and lets you delete the one you no longer use.
 - Choose the microphone for dictation in Settings → General. Dictation can use a dedicated microphone while calls and other apps keep using the input set in System Settings, such as a headset. If the chosen microphone is unplugged, Dictator uses the system default until it's connected again. Audio interfaces with the microphone on another input than the first now record it too.
 - Updates install from the menu. Choose Install Update and Dictator downloads the release, checks its published checksum and Apple signature, replaces itself and relaunches. Until you are on this version, update once from the release page; after that the menu does it. The daily check still downloads nothing until you choose to install, and you can turn it off.
 

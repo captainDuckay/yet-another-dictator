@@ -103,6 +103,13 @@ public struct ModelInstaller: Sendable {
         try Data(manifestDigest.utf8).write(to: marker, options: .atomic)
     }
 
+    /// Deletes this model's folder (the user switched models and chose to free the space).
+    public func uninstall() throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: folder.path(percentEncoded: false)) else { return }
+        try fm.removeItem(at: folder)
+    }
+
     /// Deletes model folders that are no longer in the manifest, and stray files in this one.
     public func removeStaleModels() throws {
         let fm = FileManager.default

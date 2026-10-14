@@ -193,15 +193,41 @@ struct SettingsView: View {
     private var modelSection: some View {
         Section("Model") {
             LabeledContent(
-                "Whisper Large v3 Turbo",
+                model.modelChoice.selected?.displayName ?? "Speech model",
                 value: model.modelDownload.statusText ?? model.controller.state.statusText
             )
+            ForEach(SpeechModel.ranked) { speech in
+                HStack(alignment: .top) {
+                    ModelSummary(model: speech, bytes: model.modelDownload.bytes(of: speech), recommended: speech == SpeechModel.ranked.first)
+                    Spacer()
+                    VStack(alignment: .trailing) {
+                        if model.modelChoice.selected == speech {
+                            Text("In use").foregroundStyle(.secondary)
+                        } else {
+                            Button(model.modelDownload.isInstalled(speech) ? "Use" : "Download and Use") {
+                                model.chooseModel(speech)
+                            }
+                            if model.modelDownload.isInstalled(speech) {
+                                Button("Delete") { model.deleteModel(speech) }
+                            }
+                        }
+                    }
+                }
+            }
+            if case .failed = model.modelDownload.status {
+                Button("Retry Model Download") { Task { await model.downloadAndLoadModel() } }
+            }
             Picker("Language", selection: Binding(get: { model.language }, set: { model.language = $0 })) {
                 ForEach(DictationLanguage.allCases, id: \.self) { language in
                     Text(language.displayName).tag(language)
                 }
             }
-            Text("Runs entirely on this Mac. Audio never leaves the device and is not saved. The one-time model download (about 1.6 GB, from Hugging Face, verified by SHA-256) is the only network use besides the optional update check and, when you install one, the update itself.")
+            .disabled(model.modelChoice.selected?.isEnglishOnly == true)
+            if model.modelChoice.selected?.isEnglishOnly == true {
+                Text("Parakeet understands English only. Choose Whisper for Dansk.")
+                    .foregroundStyle(.secondary)
+            }
+            Text("Runs entirely on this Mac. Audio never leaves the device and is not saved. Downloading the model you choose (from Hugging Face, verified by SHA-256) is the only network use besides the optional update check and, when you install one, the update itself.")
                 .foregroundStyle(.secondary)
         }
     }

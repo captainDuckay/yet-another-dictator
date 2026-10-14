@@ -8,10 +8,20 @@ all under licenses compatible with that. This file is bundled in `Dictator.app/C
 | WhisperKit 1.1.1 | On-device speech recognition (Swift code linked into the app) | MIT, © 2024 argmax, inc. | https://github.com/argmaxinc/WhisperKit |
 | WhisperKit Core ML model `openai_whisper-large-v3-v20240930_turbo` | Speech model, downloaded on first launch (Core ML conversion) | MIT (argmax, inc.) | https://huggingface.co/argmaxinc/whisperkit-coreml |
 | Whisper Large v3 Turbo weights and tokenizer | The original model the conversion is made from; the tokenizer files are downloaded as is | MIT, © 2022 OpenAI | https://huggingface.co/openai/whisper-large-v3-turbo, https://github.com/openai/whisper |
+| FluidAudio 0.17.7 | Runs the Parakeet model on Core ML (Swift code linked into the app; the optional NemoTextProcessing binary is turned off) | Apache 2.0, © FluidInference | https://github.com/FluidInference/FluidAudio |
+| NVIDIA Parakeet TDT 0.6B v2 (Core ML conversion `FluidInference/parakeet-tdt-0.6b-v2-coreml`) | English speech model, downloaded only if you choose it | CC-BY-4.0, © NVIDIA Corporation; converted to Core ML by FluidInference | https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2, https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml |
 | DictationCore 0.1.0 | Shared dictation logic | MIT, © 2026 CaptainDuckay | https://github.com/captains-chest/DictationCore |
 
 `swift-argument-parser` (Apache 2.0) appears in `Package.resolved` because WhisperKit's command-line
 tool needs it; the app doesn't link or ship it.
+
+**Attribution (CC-BY-4.0):** "parakeet-tdt-0.6b-v2" by NVIDIA Corporation, licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Source:
+https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2. Modified: converted to Core ML by
+FluidInference (https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml); Dictator
+downloads that conversion unchanged.
+
+FluidAudio is licensed under the Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0).
 
 The full MIT license text applies to each MIT component, with that component's copyright notice:
 

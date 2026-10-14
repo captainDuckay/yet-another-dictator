@@ -25,6 +25,8 @@ final class AppModel {
         }
     }
 
+    /// Which input device dictation records from.
+    let microphone: MicrophoneSettings
     @ObservationIgnored private let recorder: MicrophoneRecorder
     @ObservationIgnored private let hotkey: EventTapHotkey
     @ObservationIgnored private let whatsNew = WhatsNewWindow()
@@ -47,6 +49,12 @@ final class AppModel {
         let modelFolder = modelDownload.folder
         let recorder = MicrophoneRecorder()
         self.recorder = recorder
+        let microphone = MicrophoneSettings(source: AudioInputDeviceMonitor(), defaults: .standard)
+        self.microphone = microphone
+        recorder.setPreferredDevice(uid: microphone.choice?.uid)
+        microphone.onChoiceChange = { uid in recorder.setPreferredDevice(uid: uid) }
+        microphone.onDevicesChange = { recorder.inputDevicesChanged() }
+        microphone.start()
         let controller = DictationController(
             recorder: recorder,
             transcriber: WhisperKitTranscriber(modelFolder: modelFolder),

@@ -3,7 +3,7 @@
 Feature tiers (CaptainDuckay's rules):
 
 - **Core** (ship without asking): instant start/pre-roll, smart spacing/capitalization, model preload, reliability fixes.
-- **Need-to-have** (build): language choice, launch at login, undo last dictation.
+- **Need-to-have** (build): language choice, microphone choice, launch at login, undo last dictation.
 - **Nice-to-have** (CaptainDuckay decides — do not build): live preview, personal vocabulary, sounds, history, cloud models, AI rewriting, per-app profiles.
 
 Offline only (the optional update check, and installing an update, may use the network). No clipboard. Minimal entitlements. Exact version pins in `Package.swift`.

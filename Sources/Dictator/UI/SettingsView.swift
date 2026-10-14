@@ -99,12 +99,41 @@ struct SettingsView: View {
                 Text("Check for updates daily")
                 Text("Asks GitHub whether a newer version exists. Nothing is downloaded until you choose Install Update. Dictation never uses the network.")
             }
+            microphonePicker
             Toggle(isOn: Binding(
                 get: { model.keepsMicrophoneReady },
                 set: { model.keepsMicrophoneReady = $0 }
             )) {
                 Text("Keep microphone ready")
                 Text("Catches the first word even if you start speaking as you press the shortcut. macOS shows the microphone indicator while this is on. Audio is held in memory for under half a second and never saved.")
+            }
+        }
+    }
+
+    private var microphonePicker: some View {
+        let microphone = model.microphone
+        return Picker(selection: Binding(
+            get: { microphone.choice?.uid },
+            set: { uid in
+                // Re-selecting the unplugged choice keeps it rather than switching to the default.
+                guard uid != microphone.choice?.uid else { return }
+                microphone.select(microphone.devices.first { $0.uid == uid })
+            }
+        )) {
+            Text(microphone.systemDefault.map { "System Default (\($0.name))" } ?? "System Default")
+                .tag(String?.none)
+            ForEach(microphone.devices) { device in
+                Text(device.name).tag(Optional(device.uid))
+            }
+            if microphone.isChoiceMissing, let choice = microphone.choice {
+                Text("\(choice.name) (not connected)").tag(Optional(choice.uid))
+            }
+        } label: {
+            Text("Microphone")
+            if microphone.isChoiceMissing {
+                Text("Not connected. Dictation uses \(microphone.systemDefault?.name ?? "the system default input") until it is.")
+            } else {
+                Text("Used only for dictation. Calls and other apps keep the input set in System Settings → Sound.")
             }
         }
     }

@@ -5,6 +5,7 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 ## [Unreleased]
 
 ### Added
+- Choose the microphone for dictation in Settings → General. Dictation can use a dedicated microphone while calls and other apps keep using the input set in System Settings, such as a headset. If the chosen microphone is unplugged, Dictator uses the system default until it's connected again. Audio interfaces with the microphone on another input than the first now record it too.
 - Updates install from the menu. Choose Install Update and Dictator downloads the release, checks its published checksum and Apple signature, replaces itself and relaunches. Until you are on this version, update once from the release page; after that the menu does it. The daily check still downloads nothing until you choose to install, and you can turn it off.
 
 ### Fixed

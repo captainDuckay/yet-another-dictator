@@ -7,6 +7,9 @@ import DictationCore
 /// serial queue, so starting it (which can take a few hundred milliseconds) never blocks the main
 /// thread or the shortcut. It is built ahead of time, and rebuilt when the input device changes.
 ///
+/// It records from the device chosen in Settings, or the system default input. While the chosen
+/// device is unplugged it falls back to the system default, and switches back once it returns.
+///
 /// With "Keep microphone ready" on, the engine keeps running between dictations and the last
 /// `preRollSeconds` are held in a ring buffer, so a dictation includes the first syllable even if
 /// the user starts speaking as they press the shortcut. Off by default, because macOS then shows
@@ -62,6 +65,16 @@ final class MicrophoneRecorder: AudioRecording {
         }
     }
 
+    /// Records from the device with this UID when it is connected; nil follows the system default.
+    func setPreferredDevice(uid: String?) {
+        host.setPreferredDevice(uid: uid)
+    }
+
+    /// A device was plugged in or removed: switch to or away from the chosen device if needed.
+    func inputDevicesChanged() {
+        host.inputDevicesChanged()
+    }
+
     func start(onLevel: @escaping @Sendable (Float) -> Void) throws {
         guard Permissions.microphone != .denied else { throw Failure.permissionDenied }
         buffer.begin(onLevel: onLevel)
@@ -85,6 +98,12 @@ private final class AudioEngineHost: @unchecked Sendable {
     /// Whether the engine should be running (recording, or kept ready).
     private var wantsRunning = false
     private var rebuildPending = false
+    /// UID of the device chosen in Settings; nil follows the system default input.
+    private var preferredUID: String?
+    /// The device the engine records from when it is not the system default.
+    private var builtDevice: AudioDeviceID?
+    /// The input format the tap and converter were built for.
+    private var builtFormat: AVAudioFormat?
 
     init(buffer: CaptureBuffer, onFailure: @escaping @Sendable (String) -> Void) {
         self.buffer = buffer
@@ -102,6 +121,27 @@ private final class AudioEngineHost: @unchecked Sendable {
             wantsRunning = true
             startIfNeeded()
         }
+    }
+
+    func setPreferredDevice(uid: String?) {
+        queue.async { [self] in
+            guard uid != preferredUID else { return }
+            preferredUID = uid
+            if engine != nil || wantsRunning { rebuild() }
+        }
+    }
+
+    func inputDevicesChanged() {
+        queue.async { [self] in
+            // Following the system default is handled by the configuration change notification.
+            guard engine != nil, preferredUID != nil else { return }
+            if chosenDevice()?.id != builtDevice { scheduleRebuild() }
+        }
+    }
+
+    /// The chosen device if it is connected; nil means the system default.
+    private func chosenDevice() -> AudioInputDevice? {
+        MicrophoneSettings.device(uid: preferredUID, in: AudioInputDevices.all())
     }
 
     /// Stops the engine but keeps it built for the next start.
@@ -129,6 +169,22 @@ private final class AudioEngineHost: @unchecked Sendable {
         teardown()
         let engine = AVAudioEngine()
         let input = engine.inputNode
+        // Choose the device before reading the format, so the format is the chosen device's.
+        let device = chosenDevice()
+        if let device {
+            var id = device.id
+            guard
+                let unit = input.audioUnit,
+                AudioUnitSetProperty(
+                    unit,
+                    kAudioOutputUnitProperty_CurrentDevice,
+                    kAudioUnitScope_Global,
+                    0,
+                    &id,
+                    UInt32(MemoryLayout<AudioDeviceID>.size)
+                ) == noErr
+            else { throw Failure.deviceUnavailable(device.name) }
+        }
         let inputFormat = input.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else { throw Failure.noInputDevice }
         guard
@@ -140,6 +196,8 @@ private final class AudioEngineHost: @unchecked Sendable {
             ),
             let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
         else { throw Failure.converterUnavailable }
+        // Mix all channels: on an audio interface the microphone may not be on the first input.
+        converter.downmix = true
 
         input.installTap(
             onBus: 0,
@@ -159,6 +217,8 @@ private final class AudioEngineHost: @unchecked Sendable {
         }
         engine.prepare()
         self.engine = engine
+        builtDevice = device?.id
+        builtFormat = inputFormat
     }
 
     /// Device switches often send several notifications in a row; rebuild once they settle.
@@ -167,8 +227,17 @@ private final class AudioEngineHost: @unchecked Sendable {
         rebuildPending = true
         queue.asyncAfter(deadline: .now() + 0.25) { [self] in
             rebuildPending = false
-            rebuild()
+            if !isCurrent { rebuild() }
         }
+    }
+
+    /// With a chosen device, the engine reports a configuration change every time it starts,
+    /// though nothing changed. Rebuilding then would restart it, and loop. Skip those.
+    private var isCurrent: Bool {
+        guard let engine, let builtDevice, let builtFormat else { return false }
+        return chosenDevice()?.id == builtDevice
+            && engine.inputNode.outputFormat(forBus: 0) == builtFormat
+            && (engine.isRunning || !wantsRunning)
     }
 
     private func rebuild() {
@@ -190,14 +259,18 @@ private final class AudioEngineHost: @unchecked Sendable {
             engine.stop()
         }
         engine = nil
+        builtDevice = nil
+        builtFormat = nil
         buffer.clearPreRoll()
     }
 
     private enum Failure: LocalizedError {
         case noInputDevice, converterUnavailable
+        case deviceUnavailable(String)
         var errorDescription: String? {
             switch self {
             case .noInputDevice: "No microphone input is available."
+            case .deviceUnavailable(let name): "Cannot use “\(name)”."
             case .converterUnavailable: "Cannot convert microphone audio to 16 kHz."
             }
         }

@@ -17,6 +17,9 @@ use (besides the optional update check, and the update itself when you install o
   typed, as long as you haven't typed or clicked since.
 - Consecutive dictations are spaced and capitalised to continue the sentence.
 - **Language:** Automatic, Dansk or English (Settings → Model).
+- **Microphone:** the system default input, or a specific one just for dictation (Settings →
+  General), e.g. a desk microphone while calls keep using your headset. If it's unplugged,
+  dictation uses the system default until it's back.
 - Optional: open at login, keep the microphone ready (catches the first word), daily update check.
 
 That's the whole feature set. See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.

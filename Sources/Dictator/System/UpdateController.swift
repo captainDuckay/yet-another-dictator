@@ -18,13 +18,15 @@ final class UpdateController {
     @ObservationIgnored private let checker = UpdateChecker()
     @ObservationIgnored private let overlay: OverlayPanel
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let installer: UpdateInstaller
     @ObservationIgnored private var lastPercent = -1
     private static let checksKey = "checkForUpdates"
     private static let lastCheckKey = "lastUpdateCheck"
     private static let notifiedKey = "notifiedUpdateVersion"
     private static let log = Logger(subsystem: "com.captainduckay.dictator", category: "update")
 
-    init(overlay: OverlayPanel, defaults: UserDefaults = .standard) {
+    init(overlay: OverlayPanel, defaults: UserDefaults = .standard, installer: UpdateInstaller = UpdateInstaller()) {
+        self.installer = installer
         self.overlay = overlay
         self.defaults = defaults
         checksForUpdates = defaults.object(forKey: Self.checksKey) as? Bool ?? true
@@ -57,10 +59,11 @@ final class UpdateController {
         let report: @Sendable (UpdatePhase) -> Void = { [weak self] phase in
             Task { @MainActor in self?.apply(phase) }
         }
+        let installer = installer
         Task {
             do {
                 try await Task.detached(priority: .userInitiated) {
-                    try await UpdateInstaller.install(update, progress: report)
+                    try await installer.install(update, progress: report)
                 }.value
                 relaunch()
             } catch let error as UpdateInstallError {

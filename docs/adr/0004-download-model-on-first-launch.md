@@ -1,6 +1,6 @@
 # 4. Download the model on first launch instead of bundling it
 
-- Status: Accepted
+- Status: Superseded by [ADR 0006](0006-choose-the-speech-model.md) (the download is no longer automatic)
 - Date: 2026-10-11
 
 ## Context

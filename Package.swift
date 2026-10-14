@@ -5,8 +5,11 @@ let package = Package(
     name: "Dictator",
     platforms: [.macOS(.v15)],
     dependencies: [
-        // The only third-party dependency. Pinned exactly; bump deliberately after reviewing the diff.
+        // Third-party dependencies, pinned exactly; bump deliberately after reviewing the diff.
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", exact: "1.1.1"),
+        // Parakeet TDT (Core ML). The NemoTextProcessing trait (a prebuilt binary for text
+        // normalisation we don't use) is turned off, so only FluidAudio's own source is linked.
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.7", traits: []),
         // Our own shared core (state machine, shortcut model, transcript cleanup), also used by the
         // iOS app. Pinned exactly like everything else.
         .package(url: "https://github.com/captains-chest/DictationCore.git", exact: "0.2.1"),
@@ -18,6 +21,15 @@ let package = Package(
             dependencies: [
                 .product(name: "DictationCore", package: "DictationCore"),
                 .product(name: "WhisperKit", package: "WhisperKit"),
+            ]
+        ),
+
+        // The single seam where FluidAudio is used (Parakeet TDT 0.6B v2, English).
+        .target(
+            name: "ParakeetTranscription",
+            dependencies: [
+                .product(name: "DictationCore", package: "DictationCore"),
+                .product(name: "FluidAudio", package: "FluidAudio"),
             ]
         ),
 
@@ -34,6 +46,7 @@ let package = Package(
             dependencies: [
                 .product(name: "DictationCore", package: "DictationCore"),
                 "WhisperTranscription",
+                "ParakeetTranscription",
                 "AppUpdate",
             ]
         ),
@@ -51,8 +64,10 @@ let package = Package(
                 .product(name: "DictationCore", package: "DictationCore"),
                 "Dictator",
                 "AppUpdate",
+                "WhisperTranscription",
             ]
         ),
+        .testTarget(name: "ParakeetTranscriptionTests", dependencies: ["ParakeetTranscription"]),
         .testTarget(name: "WhisperTranscriptionTests", dependencies: [.product(name: "DictationCore", package: "DictationCore"), "WhisperTranscription"]),
     ]
 )

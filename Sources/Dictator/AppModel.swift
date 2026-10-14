@@ -2,6 +2,7 @@ import AppKit
 import DictationCore
 import Observation
 import OSLog
+import ParakeetTranscription
 import WhisperTranscription
 
 /// Composition root: builds the concrete adapters and wires them to the core controller.
@@ -40,13 +41,18 @@ final class AppModel {
     private static let languageKey = "language"
     private static let log = Logger(subsystem: "com.captainduckay.dictator", category: "state")
 
-    /// First-launch model download (ADR 0004).
+    /// Downloads only the model the user chose (ADR 0006).
     let modelDownload: ModelDownload
+    /// Which speech model the user chose; unset until they pick one.
+    let modelChoice: ModelChoice
+    @ObservationIgnored private let engine: ActiveTranscriber
+    @ObservationIgnored private let modelPicker = ModelPickerWindow()
 
     init() {
-        let modelDownload = ModelDownload(transport: RangedTransport())
-        self.modelDownload = modelDownload
-        let modelFolder = modelDownload.folder
+        self.modelDownload = ModelDownload.bundled(transport: RangedTransport())
+        self.modelChoice = ModelChoice(defaults: .standard)
+        let engine = ActiveTranscriber()
+        self.engine = engine
         let recorder = MicrophoneRecorder()
         self.recorder = recorder
         let microphone = MicrophoneSettings(source: AudioInputDeviceMonitor(), defaults: .standard)
@@ -57,7 +63,7 @@ final class AppModel {
         microphone.start()
         let controller = DictationController(
             recorder: recorder,
-            transcriber: WhisperKitTranscriber(modelFolder: modelFolder),
+            transcriber: engine,
             inserter: KeystrokeTextInserter(),
             precedingText: FocusedTextReader()
         )
@@ -133,7 +139,7 @@ final class AppModel {
         showWhatsNewIfUpdated()
         updates.start()
         shortcuts.start()
-        Task { await downloadAndLoadModel() }
+        startModel()
         Task {
             if Permissions.microphone == .notDetermined {
                 _ = await Permissions.requestMicrophone()
@@ -143,10 +149,51 @@ final class AppModel {
         }
     }
 
-    /// Downloads the model if needed (automatically, on first launch), then loads it.
+    /// Nothing is downloaded until a model is chosen. With no choice yet, the picker is shown.
+    private func startModel() {
+        switch ModelStartup.decide(choice: modelChoice.selected, installed: modelDownload.installedModels) {
+        case .showPicker:
+            Task { await controller.loadModel() } // Shows "choose a model" until one is picked.
+            showModelPicker()
+        case .load(let model):
+            if modelChoice.selected == nil { modelChoice.choose(model) }
+            Task { await downloadAndLoadModel() }
+        }
+    }
+
+    func showModelPicker() {
+        modelPicker.show(download: modelDownload) { [weak self] model in
+            self?.chooseModel(model)
+        }
+    }
+
+    /// Persists the choice, then downloads (if needed) and loads only that model.
+    func chooseModel(_ model: SpeechModel) {
+        modelChoice.choose(model)
+        Task { await downloadAndLoadModel() }
+    }
+
+    /// Downloads the chosen model if it is missing, then loads it.
     func downloadAndLoadModel() async {
-        guard await modelDownload.ensureInstalled() else { return }
+        guard let model = modelChoice.selected else { return }
+        modelDownload.select(model)
+        guard await modelDownload.ensureInstalled(), modelChoice.selected == model else { return }
+        let folder = modelDownload.folder
+        let transcriber: any Transcribing = switch model {
+        case .parakeetV2: ParakeetTranscriber(modelFolder: folder)
+        case .whisperLargeV3Turbo: WhisperKitTranscriber(modelFolder: folder)
+        }
+        await engine.use(transcriber)
         await controller.loadModel()
+    }
+
+    /// Frees the space of a model that isn't in use.
+    func deleteModel(_ model: SpeechModel) {
+        do {
+            try modelDownload.delete(model)
+        } catch {
+            Self.log.error("deleting model failed: \(String(describing: error), privacy: .public)")
+        }
     }
 
     func showWhatsNew() {

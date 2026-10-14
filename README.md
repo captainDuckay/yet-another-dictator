@@ -1,10 +1,12 @@
 # Dictator
 
 Minimal, local-only dictation for macOS. Press a shortcut, talk, and the text is typed into
-whatever field has focus. Transcription runs on-device with **Whisper Large v3 Turbo** (WhisperKit
-Core ML), downloaded once on first launch (about 1.6 GB) and verified against a SHA-256 manifest
-built into the app. Audio never leaves the device; the one-time model download is the only network
-use (besides the optional update check, and the update itself when you install one).
+whatever field has focus. Transcription runs on-device with the speech model you choose on first
+launch: **NVIDIA Parakeet TDT 0.6B v2** (English, about 464 MB, the most accurate and fastest; via
+FluidAudio Core ML) or **Whisper Large v3 Turbo** (Automatic/Dansk/English, about 1.6 GB; WhisperKit
+Core ML). Only the chosen model is downloaded, verified against a SHA-256 manifest built into the
+app. Audio never leaves the device; the model download is the only network use (besides the
+optional update check, and the update itself when you install one).
 
 - **Tap** the shortcut to start, tap again to stop.
 - **Hold** the shortcut to talk, release to finish.
@@ -16,7 +18,9 @@ use (besides the optional update check, and the update itself when you install o
 - **Undo Last Dictation** from the menu (or an optional shortcut) removes exactly what was just
   typed, as long as you haven't typed or clicked since.
 - Consecutive dictations are spaced and capitalised to continue the sentence.
-- **Language:** Automatic, Dansk or English (Settings → Model).
+- **Model:** switch between Parakeet and Whisper in Settings → Model (downloads on demand; delete the
+  one you no longer use).
+- **Language:** Automatic, Dansk or English with Whisper; Parakeet is English only (Settings → Model).
 - **Microphone:** the system default input, or a specific one just for dictation (Settings →
   General), e.g. a desk microphone while calls keep using your headset. If it's unplugged,
   dictation uses the system default until it's back.
@@ -51,8 +55,8 @@ open build/Dictator.app
 ```
 
 First launch: grant **Microphone**, **Input Monitoring** (needed to detect the shortcut) and
-**Accessibility** (needed to type into other apps). Dictator then downloads the model
-automatically (progress in the menu; it resumes after a quit or a dropped connection, and the menu
+**Accessibility** (needed to type into other apps). Dictator asks which speech model to download
+(nothing is downloaded until you choose) and then downloads only that one (progress in the menu; it resumes after a quit or a dropped connection, and the menu
 offers Retry if it fails). The first model load specialises Core ML for your chip and can take a few minutes; later launches take
 about a second.
 
@@ -96,6 +100,7 @@ flowchart LR
     Controller --> Ports
     Mic[MicrophoneRecorder<br/>AVAudioEngine → 16 kHz] -.implements.-> Ports
     Whisper[WhisperKitTranscriber<br/>WhisperTranscription target] -.implements.-> Ports
+    Parakeet[ParakeetTranscriber<br/>ParakeetTranscription target] -.implements.-> Ports
     Typer[KeystrokeTextInserter<br/>CGEvent unicode] -.implements.-> Ports
     Controller --> UI[Menu bar · Overlay · Settings]
 ```
@@ -103,18 +108,20 @@ flowchart LR
 | Target | Responsibility |
 | --- | --- |
 | `DictationCore` | **Separate package**, [captains-chest/DictationCore](https://github.com/captains-chest/DictationCore), pinned exactly and shared with the iOS app. Pure logic: tap/hold state machine, shortcut chord model and matcher, transcript cleanup and smart spacing, the punctuation prompt given to Whisper, text chunking, capture buffer, undo history, version/What's New/update-check logic. Defines the ports. Its tests (with fakes) live in that repo. Change it there, tag a release, then bump the exact pin here (see `docs/adr/0002`). |
-| `WhisperTranscription` | The **only** code that imports WhisperKit. Swap the model/engine here. |
+| `WhisperTranscription` | The **only** code that imports WhisperKit, plus the model manifest, installer and download (shared by both models). Whisper-only fixes (e.g. 30-second windows) live here. |
+| `ParakeetTranscription` | The **only** code that imports FluidAudio (Parakeet TDT 0.6B v2, English). Loads only from the verified folder; FluidAudio never downloads. |
 | `Dictator` | macOS adapters (hotkey, mic, typing, permissions) and SwiftUI/AppKit UI. Composition root is `AppModel`. |
 | `AppUpdate` / `DictatorUpdater` | Decides whether a release may be installed, and the unsandboxed XPC that replaces this app with that release (ADR 0005). |
 
 ## Security
 
-- **Audio never leaves the device.** The network is used for the one-time model download and, if you leave it on, updates (below). On first launch `ModelInstaller` downloads the files listed in
+- **Audio never leaves the device.** The network is used for the download of the model you choose and, if you leave it on, updates (below). Nothing is downloaded until you pick a model (ADR 0006); then `ModelInstaller` downloads that model's files listed in
   `model-manifest.txt`, which ships inside the signed app and is never fetched from the network, from
   immutable Hugging Face commits into `~/Library/Containers/com.captainduckay.dictator/Data/Library/Application Support/Models`
   (excluded from backup). Every file must match its size and SHA-256 before it is used; a `.complete`
   marker is written last. WhisperKit itself runs with `download: false` and a local tokenizer, and the
-  transcriber refuses to load if any required file is missing (ADR 0004).
+  transcriber refuses to load if any required file is missing (ADR 0004, ADR 0006). FluidAudio
+  loads Parakeet with `AsrModels.loadLocal` and never downloads by itself.
 - **Updates, and you can turn the check off.** Once a day, `UpdateChecker` asks GitHub's public releases API whether a newer version exists. Nothing is downloaded until you choose **Install Update**. That downloads the same zip the release page offers, checks its `.sha256`, and only then asks the embedded updater to replace the app. The updater accepts a Developer ID build of Dictator (team 55GY5DC584) with a stapled notarization ticket that Gatekeeper accepts, and it will not install an older version. No token or user data is sent (ephemeral session). Settings → General → *Check for updates daily* turns the check off, and then this network use stops. See ADR 0005.
 - **Minimal entitlements:** App Sandbox + microphone + outgoing network connections (for the
   model download, the update check, and installing an update). The embedded updater is the one
@@ -134,14 +141,15 @@ flowchart LR
   the focused app). Modifier keys, fn and Caps Lock always reach other
   apps (Caps Lock still toggles, and fn may still open the emoji picker depending on System
   Settings). Like all event taps, it can't see keys while a password field has secure input on.
-- **Supply chain:** one third-party dependency, WhisperKit, pinned to an exact version
+- **Supply chain:** two third-party dependencies, WhisperKit and FluidAudio (its optional
+  NemoTextProcessing binary trait is turned off), each pinned to an exact version
   (`Package.resolved` is committed). Model files are pinned to immutable Hugging Face commits and
   verified by SHA-256 (`scripts/model-manifest.txt`); LFS hashes were cross-checked against
   Hugging Face's published hashes.
 
 ### Updating dependencies
 
-- **WhisperKit:** bump `exact:` in `Package.swift`, review the upstream diff, `swift package resolve`,
+- **WhisperKit / FluidAudio:** bump `exact:` in `Package.swift`, review the upstream diff, `swift package resolve`,
   run `swift test`.
 - **Model:** regenerate `scripts/model-manifest.txt` (`<model-id> <sha256> <bytes> <hf-path>
   <local-path>`) against a new pinned commit, then delete `Model/` and run `scripts/fetch-model.sh`
@@ -152,4 +160,10 @@ flowchart LR
 ## License
 
 MIT © 2026 CaptainDuckay. See [LICENSE](LICENSE). Third-party components (WhisperKit,
-the downloaded Whisper model) are credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+FluidAudio, the downloaded Whisper and Parakeet models) are credited in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+The Parakeet model is "parakeet-tdt-0.6b-v2" by NVIDIA Corporation, licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+([source](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2)), used as converted to Core ML by
+[FluidInference](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml).

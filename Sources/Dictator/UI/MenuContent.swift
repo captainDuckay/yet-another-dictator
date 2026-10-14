@@ -11,6 +11,9 @@ struct MenuContent: View {
             if case .failed = model.modelDownload.status {
                 Button("Retry Model Download") { Task { await model.downloadAndLoadModel() } }
             }
+            if model.modelChoice.needsChoice {
+                Button("Choose Speech Model…") { model.showModelPicker() }
+            }
         } else {
             Text(model.controller.state.statusText)
         }

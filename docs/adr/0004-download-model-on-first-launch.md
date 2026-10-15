@@ -1,6 +1,7 @@
 # 4. Download the model on first launch instead of bundling it
 
 - Status: Superseded by [ADR 0006](0006-choose-the-speech-model.md) (the download is no longer automatic)
+- Note (2026-10-15): Dictator is English-only; Dansk / Danish fine-tunes are no longer pursued.
 - Date: 2026-10-11
 
 ## Context

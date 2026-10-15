@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-14
+- Note (2026-10-15): Dictator is English-only; Dansk is no longer offered. Whisper remains for Automatic/English when Parakeet is not chosen.
 - Supersedes: [ADR 0004](0004-download-model-on-first-launch.md) (automatic first-launch download)
 
 ## Context
@@ -9,7 +10,7 @@
 ADR 0004 downloaded Whisper Large v3 Turbo (about 1.6 GB) automatically on first launch. Research
 (14 Oct 2026, Open ASR Leaderboard) shows NVIDIA Parakeet TDT 0.6B v2 is more accurate for English
 (6.05 vs 7.83 average WER), many times faster, and about a third of the download. It is English
-only, so Whisper stays for Dansk and automatic language detection. The same choice is being added to
+only, so Whisper stays available for Automatic or English language selection. The same choice is being added to
 the iOS and Android apps.
 
 ## Decision

@@ -3,7 +3,7 @@
 Minimal, local-only dictation for macOS. Press a shortcut, talk, and the text is typed into
 whatever field has focus. Transcription runs on-device with the speech model you choose on first
 launch: **NVIDIA Parakeet TDT 0.6B v2** (English, about 464 MB, the most accurate and fastest; via
-FluidAudio Core ML) or **Whisper Large v3 Turbo** (Automatic/Dansk/English, about 1.6 GB; WhisperKit
+FluidAudio Core ML) or **Whisper Large v3 Turbo** (Automatic or English, about 1.6 GB; WhisperKit
 Core ML). Only the chosen model is downloaded, verified against a SHA-256 manifest built into the
 app. Audio never leaves the device; the model download is the only network use (besides the
 optional update check, and the update itself when you install one).
@@ -20,7 +20,7 @@ optional update check, and the update itself when you install one).
 - Consecutive dictations are spaced and capitalised to continue the sentence.
 - **Model:** switch between Parakeet and Whisper in Settings → Model (downloads on demand; delete the
   one you no longer use).
-- **Language:** Automatic, Dansk or English with Whisper; Parakeet is English only (Settings → Model).
+- **Language:** Automatic or English with Whisper; Parakeet is English only (Settings → Model).
 - **Microphone:** the system default input, or a specific one just for dictation (Settings →
   General), e.g. a desk microphone while calls keep using your headset. If it's unplugged,
   dictation uses the system default until it's back.
@@ -154,7 +154,7 @@ flowchart LR
 - **Model:** regenerate `scripts/model-manifest.txt` (`<model-id> <sha256> <bytes> <hf-path>
   <local-path>`) against a new pinned commit, then delete `Model/` and run `scripts/fetch-model.sh`
   for the end-to-end test. Installed apps download the new files on their next launch and delete
-  models no longer in the manifest. A second model (e.g. Dansk-only) is extra lines with its own
+  models no longer in the manifest. A second model is extra lines with its own
   model-id.
 
 ## License

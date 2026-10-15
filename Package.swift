@@ -12,7 +12,7 @@ let package = Package(
         .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.7", traits: []),
         // Our own shared core (state machine, shortcut model, transcript cleanup), also used by the
         // iOS app. Pinned exactly like everything else.
-        .package(url: "https://github.com/captains-chest/DictationCore.git", exact: "0.2.1"),
+        .package(url: "https://github.com/captains-chest/DictationCore.git", branch: "english-only"), // TODO: exact "0.3.0" after Core is tagged
     ],
     targets: [
         // The single seam where WhisperKit is used.

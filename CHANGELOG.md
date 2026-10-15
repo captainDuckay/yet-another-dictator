@@ -4,6 +4,9 @@ All notable changes to Dictator. The newest version is shown in the app's What's
 
 ## [Unreleased]
 
+### Changed
+- Dictator is English-only. The Dansk language option is removed; Whisper offers Automatic or English. Parakeet remains English only.
+
 ## [0.4.0] - 2026-10-15
 
 ### Added

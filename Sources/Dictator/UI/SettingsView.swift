@@ -224,7 +224,7 @@ struct SettingsView: View {
             }
             .disabled(model.modelChoice.selected?.isEnglishOnly == true)
             if model.modelChoice.selected?.isEnglishOnly == true {
-                Text("Parakeet understands English only. Choose Whisper for Dansk.")
+                Text("Parakeet understands English only. Switch to Whisper to choose Automatic or English.")
                     .foregroundStyle(.secondary)
             }
             Text("Runs entirely on this Mac. Audio never leaves the device and is not saved. Downloading the model you choose (from Hugging Face, verified by SHA-256) is the only network use besides the optional update check and, when you install one, the update itself.")

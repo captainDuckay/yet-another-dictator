@@ -23,7 +23,7 @@ enum SpeechModel: String, CaseIterable, Identifiable, Sendable {
     var accuracyNote: String {
         switch self {
         case .parakeetV2: "Most accurate for English (6.1% average word error rate on the Open ASR Leaderboard)."
-        case .whisperLargeV3Turbo: "Accurate (7.8% average word error rate in English). Also understands Dansk."
+        case .whisperLargeV3Turbo: "Accurate (7.8% average word error rate in English)."
         }
     }
 
@@ -36,7 +36,7 @@ enum SpeechModel: String, CaseIterable, Identifiable, Sendable {
 
     var isEnglishOnly: Bool { self == .parakeetV2 }
 
-    var languageNote: String { isEnglishOnly ? "English only" : "Automatic, Dansk or English" }
+    var languageNote: String { isEnglishOnly ? "English only" : "Automatic or English" }
 
     /// Whose model it is, for the picker.
     var source: String {

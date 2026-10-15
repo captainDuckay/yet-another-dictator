@@ -3,6 +3,22 @@ import AppUpdate
 import DictationCore
 import OSLog
 
+/// The one network call a check needs: the newest release above the running version.
+protocol ReleaseFetching: Sendable {
+    func newestRelease(above current: AppVersion) async throws -> OfferedUpdate?
+}
+
+extension UpdateChecker: ReleaseFetching {}
+
+/// Where update notices go. Update notices only; dictation state never goes through this.
+@MainActor
+protocol UpdatePresenting: AnyObject {
+    func present(_ status: String?)
+    func flash(_ message: String, isInfo: Bool)
+}
+
+extension OverlayPanel: UpdatePresenting {}
+
 /// Daily check, and installing the release the user picks. Downloading happens only after Install.
 @MainActor
 @Observable
@@ -15,8 +31,9 @@ final class UpdateController {
         didSet { defaults.set(checksForUpdates, forKey: Self.checksKey) }
     }
 
-    @ObservationIgnored private let checker = UpdateChecker()
-    @ObservationIgnored private let overlay: OverlayPanel
+    @ObservationIgnored private let fetcher: any ReleaseFetching
+    @ObservationIgnored private let presenter: any UpdatePresenting
+    @ObservationIgnored private let currentVersion: () -> AppVersion?
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let installer: UpdateInstaller
     @ObservationIgnored private var lastPercent = -1
@@ -25,9 +42,17 @@ final class UpdateController {
     private static let notifiedKey = "notifiedUpdateVersion"
     private static let log = Logger(subsystem: "com.captainduckay.dictator", category: "update")
 
-    init(overlay: OverlayPanel, defaults: UserDefaults = .standard, installer: UpdateInstaller = UpdateInstaller()) {
+    init(
+        fetcher: any ReleaseFetching,
+        presenter: any UpdatePresenting,
+        defaults: UserDefaults = .standard,
+        installer: UpdateInstaller = UpdateInstaller(),
+        currentVersion: @escaping () -> AppVersion? = { WhatsNewWindow.currentVersion }
+    ) {
+        self.fetcher = fetcher
+        self.presenter = presenter
         self.installer = installer
-        self.overlay = overlay
+        self.currentVersion = currentVersion
         self.defaults = defaults
         checksForUpdates = defaults.object(forKey: Self.checksKey) as? Bool ?? true
     }
@@ -74,29 +99,29 @@ final class UpdateController {
         }
     }
 
-    private func apply(_ phase: UpdatePhase) {
+    func apply(_ phase: UpdatePhase) {
         switch phase {
         case .downloading(let fraction):
             let percent = Int((min(1, max(0, fraction)) * 100).rounded())
             guard percent > lastPercent else { return }
             lastPercent = percent
             self.phase = .downloading(Double(percent) / 100)
-            overlay.present("Downloading update… \(percent)%")
+            presenter.present("Downloading update… \(percent)%")
         case .checking:
             self.phase = phase
-            overlay.present("Checking update…")
+            presenter.present("Checking update…")
         case .installing:
             self.phase = phase
-            overlay.present("Installing update…")
+            presenter.present("Installing update…")
         case .idle, .failed:
             self.phase = phase
         }
     }
 
-    private func fail(_ error: UpdateInstallError) {
+    func fail(_ error: UpdateInstallError) {
         phase = .failed(error.message)
-        overlay.present(nil)
-        overlay.flash(error.message)
+        presenter.present(nil)
+        presenter.flash(error.message, isInfo: false)
         Self.log.error("\(error.message, privacy: .public)")
     }
 
@@ -107,7 +132,7 @@ final class UpdateController {
         NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
             Task { @MainActor in
                 if error != nil {
-                    self.overlay.present("Update installed. Quit Dictator and open it again.")
+                    self.presenter.present("Update installed. Quit Dictator and open it again.")
                     return
                 }
                 NSApp.terminate(nil)
@@ -123,20 +148,26 @@ final class UpdateController {
 
     private func runDaily() async {
         while !Task.isCancelled {
-            let lastCheck = defaults.object(forKey: Self.lastCheckKey) as? Date
-            if checksForUpdates, UpdateCheck.isDue(lastCheck: lastCheck, now: Date()) {
-                await check(userInitiated: false)
-            }
+            await checkIfDue(now: Date())
             try? await Task.sleep(for: .seconds(60 * 60))
         }
     }
 
-    private func check(userInitiated: Bool) async {
-        guard !isChecking, phase.allowsCheck, let current = WhatsNewWindow.currentVersion else { return }
+    /// Whether the automatic check should run now. Off when the user turned checks off.
+    func shouldAutoCheck(now: Date) -> Bool {
+        checksForUpdates && UpdateCheck.isDue(lastCheck: defaults.object(forKey: Self.lastCheckKey) as? Date, now: now)
+    }
+
+    func checkIfDue(now: Date) async {
+        if shouldAutoCheck(now: now) { await check(userInitiated: false) }
+    }
+
+    func check(userInitiated: Bool) async {
+        guard !isChecking, phase.allowsCheck, let current = currentVersion() else { return }
         isChecking = true
         defer { isChecking = false }
         do {
-            let update = try await checker.newestRelease(above: current)
+            let update = try await fetcher.newestRelease(above: current)
             defaults.set(Date(), forKey: Self.lastCheckKey)
             available = update
             if phase.allowsCheck, case .failed = phase { phase = .idle }
@@ -145,15 +176,15 @@ final class UpdateController {
                 if userInitiated || defaults.string(forKey: Self.notifiedKey) != version {
                     defaults.set(version, forKey: Self.notifiedKey)
                     let verb = update.canInstall ? "install it" : "get it"
-                    overlay.flash("Dictator \(version) is available. Open the menu bar menu to \(verb).", isInfo: true)
+                    presenter.flash("Dictator \(version) is available. Open the menu bar menu to \(verb).", isInfo: true)
                 }
             } else if userInitiated {
-                overlay.flash("Dictator \(current.description) is up to date.", isInfo: true)
+                presenter.flash("Dictator \(current.description) is up to date.", isInfo: true)
             }
             Self.log.notice("update check: \(update?.version.description ?? "none", privacy: .public)")
         } catch {
             Self.log.error("update check failed: \(error.localizedDescription, privacy: .public)")
-            if userInitiated { overlay.flash("Couldn't check for updates: \(error.localizedDescription)") }
+            if userInitiated { presenter.flash("Couldn't check for updates: \(error.localizedDescription)", isInfo: false) }
         }
     }
 }

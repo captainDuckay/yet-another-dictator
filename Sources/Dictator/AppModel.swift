@@ -70,7 +70,7 @@ final class AppModel {
         self.controller = controller
         let overlay = OverlayPanel(controller: controller)
         self.overlay = overlay
-        self.updates = UpdateController(overlay: overlay)
+        self.updates = UpdateController(fetcher: UpdateChecker(), presenter: overlay)
         let hotkey = EventTapHotkey()
         self.hotkey = hotkey
         self.shortcuts = ShortcutSettings(hotkey: hotkey, defaults: .standard)

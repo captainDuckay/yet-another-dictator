@@ -193,37 +193,37 @@ struct SettingsView: View {
     private var modelSection: some View {
         Section("Model") {
             LabeledContent(
-                model.modelChoice.selected?.displayName ?? "Speech model",
-                value: model.modelDownload.statusText ?? model.controller.state.statusText
+                model.library.selected?.displayName ?? "Speech model",
+                value: model.library.statusText ?? model.controller.state.statusText
             )
             ForEach(SpeechModel.ranked) { speech in
                 HStack(alignment: .top) {
-                    ModelSummary(model: speech, bytes: model.modelDownload.bytes(of: speech), recommended: speech == SpeechModel.ranked.first)
+                    ModelSummary(model: speech, bytes: model.library.bytes(of: speech), recommended: speech == SpeechModel.ranked.first)
                     Spacer()
                     VStack(alignment: .trailing) {
-                        if model.modelChoice.selected == speech {
+                        if model.library.selected == speech {
                             Text("In use").foregroundStyle(.secondary)
                         } else {
-                            Button(model.modelDownload.isInstalled(speech) ? "Use" : "Download and Use") {
-                                model.chooseModel(speech)
+                            Button(model.library.isInstalled(speech) ? "Use" : "Download and Use") {
+                                Task { await model.library.choose(speech) }
                             }
-                            if model.modelDownload.isInstalled(speech) {
-                                Button("Delete") { model.deleteModel(speech) }
+                            if model.library.canDelete(speech) {
+                                Button("Delete") { try? model.library.delete(speech) }
                             }
                         }
                     }
                 }
             }
-            if case .failed = model.modelDownload.status {
-                Button("Retry Model Download") { Task { await model.downloadAndLoadModel() } }
+            if case .failed = model.library.status {
+                Button("Retry Model Download") { Task { await model.library.retry() } }
             }
             Picker("Language", selection: Binding(get: { model.language }, set: { model.language = $0 })) {
                 ForEach(DictationLanguage.allCases, id: \.self) { language in
                     Text(language.displayName).tag(language)
                 }
             }
-            .disabled(model.modelChoice.selected?.isEnglishOnly == true)
-            if model.modelChoice.selected?.isEnglishOnly == true {
+            .disabled(model.library.selected?.isEnglishOnly == true)
+            if model.library.selected?.isEnglishOnly == true {
                 Text("Parakeet understands English only. Switch to Whisper to choose Automatic or English.")
                     .foregroundStyle(.secondary)
             }

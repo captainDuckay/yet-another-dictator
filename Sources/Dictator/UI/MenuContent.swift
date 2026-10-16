@@ -6,12 +6,12 @@ struct MenuContent: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        if let download = model.modelDownload.statusText {
+        if let download = model.library.statusText {
             Text(download)
-            if case .failed = model.modelDownload.status {
-                Button("Retry Model Download") { Task { await model.downloadAndLoadModel() } }
+            if case .failed = model.library.status {
+                Button("Retry Model Download") { Task { await model.library.retry() } }
             }
-            if model.modelChoice.needsChoice {
+            if model.library.needsChoice {
                 Button("Choose Speech Model…") { model.showModelPicker() }
             }
         } else {

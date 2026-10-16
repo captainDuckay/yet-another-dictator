@@ -7,8 +7,8 @@ import SwiftUI
 final class ModelPickerWindow {
     private var window: NSWindow?
 
-    func show(download: ModelDownload, onChoose: @escaping (SpeechModel) -> Void) {
-        let view = ModelPickerView(download: download) { [weak self] model in
+    func show(library: ModelLibrary, onChoose: @escaping (SpeechModel) -> Void) {
+        let view = ModelPickerView(library: library) { [weak self] model in
             self?.window?.close()
             onChoose(model)
         }
@@ -28,7 +28,7 @@ final class ModelPickerWindow {
 }
 
 private struct ModelPickerView: View {
-    let download: ModelDownload
+    let library: ModelLibrary
     let choose: (SpeechModel) -> Void
     @State private var selection: SpeechModel = SpeechModel.ranked[0]
 
@@ -41,7 +41,7 @@ private struct ModelPickerView: View {
             VStack(spacing: 8) {
                 ForEach(Array(SpeechModel.ranked.enumerated()), id: \.element) { index, model in
                     Button { selection = model } label: {
-                        ModelSummary(model: model, bytes: download.bytes(of: model), recommended: index == 0)
+                        ModelSummary(model: model, bytes: library.bytes(of: model), recommended: index == 0)
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(
@@ -55,7 +55,7 @@ private struct ModelPickerView: View {
             }
             HStack {
                 Spacer()
-                Button("Download \(selection.displayName) (\(ModelDownload.size(download.bytes(of: selection))))") {
+                Button("Download \(selection.displayName) (\(ModelLibrary.size(library.bytes(of: selection))))") {
                     choose(selection)
                 }
                 .keyboardShortcut(.defaultAction)
@@ -84,7 +84,7 @@ struct ModelSummary: View {
                         .background(Capsule().fill(Color.accentColor.opacity(0.2)))
                 }
             }
-            Text("\(ModelDownload.size(bytes)) download · \(model.languageNote) · \(model.source)")
+            Text("\(ModelLibrary.size(bytes)) download · \(model.languageNote) · \(model.source)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(model.accuracyNote)

@@ -41,18 +41,12 @@ final class AppModel {
     private static let languageKey = "language"
     private static let log = Logger(subsystem: "com.captainduckay.dictator", category: "state")
 
-    /// Downloads only the model the user chose (ADR 0006).
-    let modelDownload: ModelDownload
-    /// Which speech model the user chose; unset until they pick one.
-    let modelChoice: ModelChoice
-    @ObservationIgnored private let engine: ActiveTranscriber
+    /// The chosen model, the one in use, downloads and deleting (ADR 0007).
+    let library: ModelLibrary
     @ObservationIgnored private let modelPicker = ModelPickerWindow()
 
     init() {
-        self.modelDownload = ModelDownload.bundled(transport: RangedTransport())
-        self.modelChoice = ModelChoice(defaults: .standard)
         let engine = ActiveTranscriber()
-        self.engine = engine
         let recorder = MicrophoneRecorder()
         self.recorder = recorder
         let microphone = MicrophoneSettings(source: AudioInputDeviceMonitor(), defaults: .standard)
@@ -68,6 +62,18 @@ final class AppModel {
             precedingText: FocusedTextReader()
         )
         self.controller = controller
+        self.library = ModelLibrary.bundled(
+            transport: RangedTransport(),
+            defaults: .standard,
+            engine: engine,
+            makeTranscriber: { model, folder in
+                switch model {
+                case .parakeetV2: ParakeetTranscriber(modelFolder: folder)
+                case .whisperLargeV3Turbo: WhisperKitTranscriber(modelFolder: folder)
+                }
+            },
+            onActivated: { await controller.loadModel() }
+        )
         let overlay = OverlayPanel(controller: controller)
         self.overlay = overlay
         self.updates = UpdateController(overlay: overlay)
@@ -139,7 +145,8 @@ final class AppModel {
         showWhatsNewIfUpdated()
         updates.start()
         shortcuts.start()
-        startModel()
+        if library.needsChoice { showModelPicker() }
+        Task { await library.start() }
         Task {
             if Permissions.microphone == .notDetermined {
                 _ = await Permissions.requestMicrophone()
@@ -149,50 +156,9 @@ final class AppModel {
         }
     }
 
-    /// Nothing is downloaded until a model is chosen. With no choice yet, the picker is shown.
-    private func startModel() {
-        switch ModelStartup.decide(choice: modelChoice.selected, installed: modelDownload.installedModels) {
-        case .showPicker:
-            Task { await controller.loadModel() } // Shows "choose a model" until one is picked.
-            showModelPicker()
-        case .load(let model):
-            if modelChoice.selected == nil { modelChoice.choose(model) }
-            Task { await downloadAndLoadModel() }
-        }
-    }
-
     func showModelPicker() {
-        modelPicker.show(download: modelDownload) { [weak self] model in
-            self?.chooseModel(model)
-        }
-    }
-
-    /// Persists the choice, then downloads (if needed) and loads only that model.
-    func chooseModel(_ model: SpeechModel) {
-        modelChoice.choose(model)
-        Task { await downloadAndLoadModel() }
-    }
-
-    /// Downloads the chosen model if it is missing, then loads it.
-    func downloadAndLoadModel() async {
-        guard let model = modelChoice.selected else { return }
-        modelDownload.select(model)
-        guard await modelDownload.ensureInstalled(), modelChoice.selected == model else { return }
-        let folder = modelDownload.folder
-        let transcriber: any Transcribing = switch model {
-        case .parakeetV2: ParakeetTranscriber(modelFolder: folder)
-        case .whisperLargeV3Turbo: WhisperKitTranscriber(modelFolder: folder)
-        }
-        await engine.use(transcriber)
-        await controller.loadModel()
-    }
-
-    /// Frees the space of a model that isn't in use.
-    func deleteModel(_ model: SpeechModel) {
-        do {
-            try modelDownload.delete(model)
-        } catch {
-            Self.log.error("deleting model failed: \(String(describing: error), privacy: .public)")
+        modelPicker.show(library: library) { [library] model in
+            Task { await library.choose(model) }
         }
     }
 

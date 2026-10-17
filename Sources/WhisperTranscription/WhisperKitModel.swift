@@ -1,6 +1,6 @@
 import DictationCore
 import Foundation
-import Synchronization
+import ModelSession
 @preconcurrency import WhisperKit
 
 /// On-device transcription with WhisperKit Large v3 Turbo, loaded from the folder `ModelInstaller`

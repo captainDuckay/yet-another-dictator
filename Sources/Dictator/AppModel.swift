@@ -1,5 +1,6 @@
 import AppKit
 import DictationCore
+import ModelSession
 import Observation
 import OSLog
 import ParakeetTranscription
@@ -68,8 +69,8 @@ final class AppModel {
             engine: engine,
             makeTranscriber: { model, folder in
                 switch model {
-                case .parakeetV2: ParakeetTranscriber(modelFolder: folder)
-                case .whisperLargeV3Turbo: WhisperKitTranscriber(modelFolder: folder)
+                case .parakeetV2: ModelSession.parakeet(modelFolder: folder)
+                case .whisperLargeV3Turbo: ModelSession.whisperKit(modelFolder: folder)
                 }
             },
             onActivated: { await controller.loadModel() }

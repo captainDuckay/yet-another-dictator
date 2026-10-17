@@ -15,12 +15,19 @@ let package = Package(
         .package(url: "https://github.com/captains-chest/DictationCore.git", exact: "0.3.0"),
     ],
     targets: [
+        // Loads and runs one speech model; adapters supply only the engine.
+        .target(
+            name: "ModelSession",
+            dependencies: [.product(name: "DictationCore", package: "DictationCore")]
+        ),
+
         // The single seam where WhisperKit is used.
         .target(
             name: "WhisperTranscription",
             dependencies: [
                 .product(name: "DictationCore", package: "DictationCore"),
                 .product(name: "WhisperKit", package: "WhisperKit"),
+                "ModelSession",
             ]
         ),
 
@@ -30,6 +37,7 @@ let package = Package(
             dependencies: [
                 .product(name: "DictationCore", package: "DictationCore"),
                 .product(name: "FluidAudio", package: "FluidAudio"),
+                "ModelSession",
             ]
         ),
 
@@ -47,6 +55,7 @@ let package = Package(
                 .product(name: "DictationCore", package: "DictationCore"),
                 "WhisperTranscription",
                 "ParakeetTranscription",
+                "ModelSession",
                 "AppUpdate",
             ]
         ),
@@ -67,7 +76,8 @@ let package = Package(
                 "WhisperTranscription",
             ]
         ),
-        .testTarget(name: "ParakeetTranscriptionTests", dependencies: ["ParakeetTranscription"]),
-        .testTarget(name: "WhisperTranscriptionTests", dependencies: [.product(name: "DictationCore", package: "DictationCore"), "WhisperTranscription"]),
+        .testTarget(name: "ModelSessionTests", dependencies: ["ModelSession", .product(name: "DictationCore", package: "DictationCore")]),
+        .testTarget(name: "ParakeetTranscriptionTests", dependencies: ["ParakeetTranscription", "ModelSession"]),
+        .testTarget(name: "WhisperTranscriptionTests", dependencies: [.product(name: "DictationCore", package: "DictationCore"), "WhisperTranscription", "ModelSession"]),
     ]
 )

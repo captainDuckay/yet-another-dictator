@@ -3,6 +3,7 @@ import DictationCore
 import Foundation
 import Testing
 import WhisperTranscription
+import ModelSession
 
 /// End-to-end check against the real model. Run `scripts/fetch-model.sh` first; skipped otherwise.
 struct WhisperKitTranscriberTests {

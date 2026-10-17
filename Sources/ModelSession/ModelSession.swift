@@ -39,9 +39,9 @@ public actor ModelSession: Transcribing {
         modelFolder: URL, requiredFiles: [String],
         load: @escaping @Sendable (URL) async throws -> any LoadedSpeechModel
     ) {
-        modelFolder = modelFolder
-        requiredFiles = requiredFiles
-        loadModel = load
+        self.modelFolder = modelFolder
+        self.requiredFiles = requiredFiles
+        self.loadModel = load
     }
 
     public func prepare() async throws {

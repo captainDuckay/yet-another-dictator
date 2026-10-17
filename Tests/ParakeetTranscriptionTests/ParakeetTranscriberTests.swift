@@ -1,5 +1,6 @@
 import Foundation
 import ModelSession
+import ParakeetTranscription
 import Testing
 
 struct ParakeetModelTests {
